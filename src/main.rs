@@ -52,6 +52,10 @@ struct Args {
     #[arg(short, long, default_value_t = false)]
     verbose: bool,
 
+    /// Use local LLM (Ollama) for enhanced transcript formatting
+    #[arg(long, default_value_t = false)]
+    use_llm: bool,
+
     /// Dry run - don't write files
     #[arg(long, default_value_t = false)]
     dry_run: bool,
@@ -99,7 +103,9 @@ async fn main() -> anyhow::Result<()> {
         args.timestamps,
         args.compact,
         args.paragraph_length,
-    );
+        args.use_llm,
+    )
+    .await;
 
     // Generate filename
     let sanitized_title = metadata
@@ -138,7 +144,7 @@ async fn main() -> anyhow::Result<()> {
     let char_count = transcript.chars().count();
     let paragraph_count = markdown.matches("\n\n").count() + 1;
     let formatting_type = if args.compact { "compact" } else { "enhanced" };
-    
+
     println!("Transcription completed using: {}", source);
     println!("Formatting statistics:");
     println!("  - Formatting type: {}", formatting_type);

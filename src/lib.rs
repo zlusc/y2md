@@ -174,7 +174,11 @@ pub async fn check_captions_available(video_id: &str) -> Result<bool, Y2mdError>
 }
 
 /// Extract captions from YouTube video
-pub async fn extract_captions(video_id: &str, language: Option<&str>, force_formatting: bool) -> Result<String, Y2mdError> {
+pub async fn extract_captions(
+    video_id: &str,
+    language: Option<&str>,
+    force_formatting: bool,
+) -> Result<String, Y2mdError> {
     let url = format!("https://www.youtube.com/watch?v={}", video_id);
     let lang = language.unwrap_or("en");
 
@@ -521,7 +525,7 @@ pub async fn transcribe_audio(
         "Transcription completed successfully (language: {})",
         whisper_lang
     );
-    
+
     // Apply formatting to STT output
     println!("Applying formatting to transcript...");
     let formatted_transcript = format_transcript(&transcript, false, paragraph_length);
@@ -566,13 +570,14 @@ fn determine_model_and_language(language: Option<&str>) -> Result<(String, Strin
 }
 
 /// Format transcript as Markdown with metadata
-pub fn format_markdown(
+pub async fn format_markdown(
     metadata: &VideoMetadata,
     transcript: &str,
     source: &str,
     include_timestamps: bool,
     compact: bool,
     paragraph_length: usize,
+    use_llm: bool,
 ) -> String {
     let mut markdown = String::new();
 
@@ -608,7 +613,24 @@ pub fn format_markdown(
     }
 
     // Use enhanced formatting for better readability
-    let formatted_transcript = format_transcript(transcript, compact, paragraph_length);
+    let formatted_transcript = if use_llm {
+        println!("Using LLM for enhanced formatting...");
+        match format_with_llm(transcript).await {
+            Ok(llm_formatted) => {
+                println!("LLM formatting completed successfully");
+                llm_formatted
+            }
+            Err(e) => {
+                println!(
+                    "LLM formatting failed: {}, falling back to standard formatting",
+                    e
+                );
+                format_transcript(transcript, compact, paragraph_length)
+            }
+        }
+    } else {
+        format_transcript(transcript, compact, paragraph_length)
+    };
     markdown.push_str(&formatted_transcript);
 
     markdown
@@ -802,18 +824,76 @@ pub fn format_transcript(transcript: &str, compact: bool, paragraph_length: usiz
     format_paragraphs(&cleaned, paragraph_length)
 }
 
-/// Optional: Apply LLM polishing to transcript
-/// This is a placeholder for future LLM integration
-/// Could use llama.cpp, ollama, or other local LLM solutions
-fn _polish_with_llm(transcript: &str) -> Result<String, Y2mdError> {
-    // TODO: Implement LLM integration for:
-    // - Grammar correction
-    // - Sentence structure improvement
-    // - Removing filler words
-    // - Improving flow and coherence
+/// Apply LLM formatting to transcript using Ollama
+pub async fn format_with_llm(transcript: &str) -> Result<String, Y2mdError> {
+    // Check if Ollama service is available
+    let client = reqwest::Client::new();
+    let health_check = client.get("http://localhost:11434/api/tags").send().await;
 
-    // For now, return the original transcript
-    Ok(transcript.to_string())
+    if health_check.is_err() {
+        return Err(Y2mdError::Config(
+            "Ollama service not available. Make sure Ollama is running on localhost:11434"
+                .to_string(),
+        ));
+    }
+
+    // Prepare the prompt for the LLM
+    let prompt = format!(
+        "Please format the following transcript into well-structured markdown. 
+        Keep the original content but improve readability by:
+        - Organizing into logical paragraphs
+        - Fixing any grammar or punctuation issues
+        - Removing filler words if appropriate
+        - Maintaining the original meaning and tone
+        
+        Transcript:\n\n{}
+        
+        Formatted markdown:",
+        transcript
+    );
+
+    // Prepare the request payload
+    let request_body = serde_json::json!({
+        "model": "mistral-nemo:12b-instruct-2407-q5_0",
+        "prompt": prompt,
+        "stream": false
+    });
+
+    // Send request to Ollama
+    let response = client
+        .post("http://localhost:11434/api/generate")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| Y2mdError::Config(format!("Failed to connect to Ollama: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Err(Y2mdError::Config(format!(
+            "Ollama API returned error: {}",
+            response.status()
+        )));
+    }
+
+    // Parse the response
+    let response_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| Y2mdError::Config(format!("Failed to parse Ollama response: {}", e)))?;
+
+    // Extract the generated text
+    let formatted_text = response_json["response"]
+        .as_str()
+        .ok_or_else(|| Y2mdError::Config("Invalid response format from Ollama".to_string()))?
+        .trim()
+        .to_string();
+
+    if formatted_text.is_empty() {
+        return Err(Y2mdError::Config(
+            "Ollama returned empty response".to_string(),
+        ));
+    }
+
+    Ok(formatted_text)
 }
 
 /// Clean and normalize transcript text
@@ -1018,17 +1098,17 @@ mod tests {
     fn test_formatting_pipeline() {
         // Test the complete formatting pipeline
         let raw_transcript = "hello world this is a test sentence how are you doing today i hope you are doing well this is another test sentence to demonstrate the formatting capabilities of our system";
-        
+
         // Test compact mode
         let compact = format_transcript(raw_transcript, true, 8);
         assert!(compact.contains("Hello world this is a test sentence"));
         assert!(compact.contains("how are you doing today"));
-        
+
         // Test enhanced mode
         let enhanced = format_transcript(raw_transcript, false, 4);
         assert!(enhanced.contains("Hello world this is a test sentence"));
         assert!(enhanced.contains("how are you doing today"));
-        
+
         // Verify they produce different outputs
         assert_ne!(compact, enhanced);
     }
@@ -1036,28 +1116,40 @@ mod tests {
     #[test]
     fn test_paragraph_length_customization() {
         let transcript = "first sentence. second sentence. third sentence. fourth sentence. fifth sentence. sixth sentence. seventh sentence. eighth sentence. ninth sentence. tenth sentence. eleventh sentence. twelfth sentence.";
-        
+
         // Test different paragraph lengths in compact mode
         let compact_short = format_transcript(transcript, true, 2);
         let compact_long = format_transcript(transcript, true, 5);
-        
+
         println!("Compact short (2): '{}'", compact_short);
         println!("Compact long (5): '{}'", compact_long);
-        println!("Compact short paragraphs: {}", compact_short.matches("\n\n").count() + 1);
-        println!("Compact long paragraphs: {}", compact_long.matches("\n\n").count() + 1);
-        
+        println!(
+            "Compact short paragraphs: {}",
+            compact_short.matches("\n\n").count() + 1
+        );
+        println!(
+            "Compact long paragraphs: {}",
+            compact_long.matches("\n\n").count() + 1
+        );
+
         // They should be different due to different paragraph lengths
         assert_ne!(compact_short, compact_long);
-        
+
         // Test different paragraph lengths in enhanced mode
         let enhanced_short = format_transcript(transcript, false, 2);
         let enhanced_long = format_transcript(transcript, false, 5);
-        
+
         println!("Enhanced short (2): '{}'", enhanced_short);
         println!("Enhanced long (5): '{}'", enhanced_long);
-        println!("Enhanced short paragraphs: {}", enhanced_short.matches("\n\n").count() + 1);
-        println!("Enhanced long paragraphs: {}", enhanced_long.matches("\n\n").count() + 1);
-        
+        println!(
+            "Enhanced short paragraphs: {}",
+            enhanced_short.matches("\n\n").count() + 1
+        );
+        println!(
+            "Enhanced long paragraphs: {}",
+            enhanced_long.matches("\n\n").count() + 1
+        );
+
         // They should be different due to different paragraph lengths
         assert_ne!(enhanced_short, enhanced_long);
     }

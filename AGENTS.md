@@ -31,3 +31,9 @@
 - `reqwest` for HTTP, `serde` for serialization
 - `indicatif` for progress bars
 - `symphonia` for audio processing
+
+## LLM Integration
+- Uses Ollama REST API for local LLM formatting
+- Model: `mistral-nemo:12b-instruct-2407-q5_0`
+- Endpoint: `http://localhost:11434/api/generate`
+- Fallback to standard formatting if LLM unavailable

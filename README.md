@@ -15,6 +15,7 @@ A Rust CLI tool that converts YouTube videos to Markdown transcripts using speec
 - ✅ Markdown formatting with YAML front matter
 - ✅ Command-line interface with comprehensive options
 - ✅ Cross-platform support
+- ✅ Local LLM integration via Ollama for enhanced formatting
 
 ## Requirements
 
@@ -67,6 +68,7 @@ y2md https://www.youtube.com/watch?v=VIDEO_ID --dry-run
 - `--model`: Whisper model size (default: small)
 - `--threads`: Number of threads for STT (default: 4)
 - `-v, --verbose`: Verbose output
+- `--use-llm`: Use local LLM (Ollama) for enhanced transcript formatting
 - `--dry-run`: Preview without writing files
 
 ## Supported Languages
@@ -74,6 +76,25 @@ y2md https://www.youtube.com/watch?v=VIDEO_ID --dry-run
 - **English**: Uses optimized English-only model
 - **Spanish, French, German, Italian, Portuguese**: Uses multi-language model
 - **Russian, Japanese, Chinese, Korean, Arabic, Hindi**: Uses multi-language model
+
+## LLM Integration
+
+For enhanced transcript formatting, you can use a local LLM via Ollama:
+
+```bash
+# Install Ollama and pull the model
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama pull mistral-nemo:12b-instruct-2407-q5_0
+
+# Use LLM formatting
+cargo run -- https://www.youtube.com/watch?v=VIDEO_ID --use-llm
+```
+
+The LLM will:
+- Organize content into logical paragraphs
+- Fix grammar and punctuation
+- Remove filler words when appropriate
+- Improve overall readability while maintaining original meaning
 
 ## Building
 

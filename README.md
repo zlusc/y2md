@@ -33,7 +33,7 @@ A Rust CLI tool that converts YouTube videos to Markdown transcripts using speec
 # Clone and build
 cargo build --release
 
-# Download whisper models
+# Download whisper models and setup Ollama
 ./download_model.sh
 ```
 
@@ -79,14 +79,10 @@ y2md https://www.youtube.com/watch?v=VIDEO_ID --dry-run
 
 ## LLM Integration
 
-For enhanced transcript formatting, you can use a local LLM via Ollama:
+For enhanced transcript formatting, you can use a local LLM via Ollama. The setup script (`download_model.sh`) automatically installs Ollama and downloads the required model.
 
 ```bash
-# Install Ollama and pull the model
-curl -fsSL https://ollama.ai/install.sh | sh
-ollama pull mistral-nemo:12b-instruct-2407-q5_0
-
-# Use LLM formatting
+# Use LLM formatting (after running download_model.sh)
 cargo run -- https://www.youtube.com/watch?v=VIDEO_ID --use-llm
 ```
 
@@ -95,6 +91,24 @@ The LLM will:
 - Fix grammar and punctuation
 - Remove filler words when appropriate
 - Improve overall readability while maintaining original meaning
+
+### Ollama Service Management
+
+After running `download_model.sh`, the Ollama service should be running. If you need to manage it manually:
+
+```bash
+# Start Ollama service
+systemctl --user start ollama
+
+# Stop Ollama service
+systemctl --user stop ollama
+
+# Check Ollama status
+systemctl --user status ollama
+
+# View available models
+ollama list
+```
 
 ## Building
 

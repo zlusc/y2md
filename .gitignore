@@ -1,0 +1,12 @@
+# folders for output or temp files.
+examples/
+target/
+*.wav
+*.opus
+*.mp3
+
+# Environment variables
+.env
+.env.local
+
+

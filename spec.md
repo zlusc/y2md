@@ -157,10 +157,16 @@ A small cross-platform CLI tool that, given a single YouTube URL, retrieves the 
   - Expose `--model` (`tiny/base/small/medium/large-v3/large-v3-turbo`) and `--device` (`cpu` only; GPU via `whisper.cpp` build flags if available).
   - Note: “large-v3-turbo” is substantially faster with competitive accuracy for many cases. ([Modal][7])
 
-### 7.5 Configuration
+### 7.5 Configuration System
 
-- `y2md.toml` in XDG config dir:
-  - `default_lang`, `prefer_captions = true`, `downloader = "yt-dlp"`, `audio_format = "wav"`, `model = "small"`, `output_dir`, `timestamps = true`, `cookies_file`, `api_key` (optional).
+- **Configuration File**: `~/.config/y2md/config.toml` (TOML format)
+- **Configuration Commands**: `y2md config` subcommands for easy management
+- **LLM Provider Support**: Ollama (default), OpenAI, LM Studio
+- **Configurable Settings**:
+  - `default_lang`, `prefer_captions = true`, `output_dir`, `timestamps = false`, `compact = false`, `paragraph_length = 4`
+  - LLM settings: `provider`, `model`, `endpoint`, `api_key`
+- **Override System**: CLI arguments override configuration file settings
+- **Validation**: Model availability checks and graceful fallbacks
 
 ---
 

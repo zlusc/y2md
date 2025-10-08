@@ -39,8 +39,26 @@
 - **FFmpeg**: Required for audio processing
   - Install: `sudo apt install ffmpeg` (Ubuntu/Debian) or `brew install ffmpeg` (macOS)
 
+## Configuration System
+- **Configuration File**: `~/.config/y2md/config.toml`
+- **Configuration Commands**: `y2md config` subcommands for management
+- **LLM Providers**: Ollama (default), OpenAI, LM Studio
+- **Configuration Overrides**: CLI arguments override config file settings
+
 ## LLM Integration
-- Uses Ollama REST API for local LLM formatting
-- Model: `mistral-nemo:12b-instruct-2407-q5_0`
-- Endpoint: `http://localhost:11434/api/generate`
-- Fallback to standard formatting if LLM unavailable
+- **Multiple Providers**: Ollama, OpenAI, LM Studio
+- **Configurable Models**: Set via `y2md config set-llm-model`
+- **Endpoint Configuration**: Customizable API endpoints
+- **API Key Support**: For OpenAI-compatible providers
+- **Model Validation**: Checks model availability before use
+- **Timeout Handling**: 2-minute timeout with graceful fallback
+- **Fallback System**: Automatic fallback to standard formatting if LLM fails
+
+## Model Management System
+- **Automatic Downloads**: `set-llm-model` automatically downloads missing models
+- **Interactive Confirmation**: Asks for confirmation before downloading large models
+- **Progress Indicators**: Shows download progress with spinner
+- **Model Cache**: Caches local model list for 30 seconds
+- **Management Commands**: `y2md model` subcommands for full control
+- **Ollama Integration**: Uses Ollama API for model operations
+- **Error Recovery**: Clear error messages with actionable suggestions

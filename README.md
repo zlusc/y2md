@@ -1,4 +1,4 @@
-# YouTube to Markdown Transcriber (y2md)
+	# YouTube to Markdown Transcriber (y2md)
 
 A Rust CLI tool that converts YouTube videos to Markdown transcripts using speech-to-text and caption extraction.
 
@@ -16,6 +16,20 @@ A Rust CLI tool that converts YouTube videos to Markdown transcripts using speec
 - ✅ Command-line interface with comprehensive options
 - ✅ Cross-platform support
 - ✅ Local LLM integration via Ollama for enhanced formatting
+- ✅ Advanced model management system with automatic downloads
+- ✅ Multi-provider LLM support (Ollama, OpenAI, LM Studio)
+- ✅ Configuration management with XDG compliance
+- ✅ Streaming model downloads with progress tracking
+- ✅ Automatic config updates when downloading specific models
+- ✅ Model availability checking with caching
+- ✅ Enhanced error handling and user confirmation
+- ✅ Advanced model management system with automatic downloads
+- ✅ Multi-provider LLM support (Ollama, OpenAI, LM Studio)
+- ✅ Configuration management with XDG compliance
+- ✅ Streaming model downloads with progress tracking
+- ✅ Automatic config updates when downloading specific models
+- ✅ Model availability checking with caching
+- ✅ Enhanced error handling and user confirmation
 
 ## Requirements
 
@@ -83,9 +97,95 @@ y2md https://www.youtube.com/watch?v=VIDEO_ID --dry-run
 - **Spanish, French, German, Italian, Portuguese**: Uses multi-language model
 - **Russian, Japanese, Chinese, Korean, Arabic, Hindi**: Uses multi-language model
 
+## Configuration
+
+Y2MD supports a flexible configuration system that allows you to customize various settings:
+
+### Configuration Commands
+
+```bash
+# Show current configuration
+y2md config show
+
+# Set LLM provider (ollama, openai, lmstudio)
+y2md config set-llm-provider ollama
+
+# Set LLM model (automatically downloads if not available)
+y2md config set-llm-model mistral-nemo:12b-instruct-2407-q5_0
+
+# Set LLM endpoint
+y2md config set-llm-endpoint http://localhost:11434
+
+# Set LLM API key (for OpenAI)
+y2md config set-llm-api-key your-api-key
+
+# Set default language
+y2md config set-language en
+
+# Set output directory
+y2md config set-output-dir ./transcripts
+
+# Set paragraph length
+y2md config set-paragraph-length 4
+
+# Reset to defaults
+y2md config reset
+```
+
+### Configuration System Features
+
+The configuration system now includes:
+
+- **XDG Compliance**: Configuration files are stored in standard XDG directories (`~/.config/y2md/config.toml`)
+- **Automatic Model Validation**: When setting LLM models, the system validates model availability
+- **Interactive Downloads**: Missing models trigger interactive download prompts with size warnings
+- **Provider-Specific Validation**: Each LLM provider has specific validation rules (e.g., OpenAI requires API keys)
+- **Graceful Fallbacks**: If LLM formatting fails, the system falls back to standard formatting
+- **Timeout Handling**: LLM requests have 2-minute timeouts with clear error messages
+
+### Model Management Commands
+
+```bash
+# Check model status and availability
+y2md model status
+
+# Download the current configured model
+y2md model download
+
+# Download a specific model (automatically updates config)
+y2md model download <model-name>
+
+# List available models in Ollama library
+y2md model list-available [search-term]
+
+# List locally installed models
+y2md model list-local
+
+# Remove a model from Ollama
+y2md model remove <model-name>
+```
+
+### Enhanced Model Management Features
+
+The model management system now includes:
+
+- **Automatic Downloads**: When setting a new LLM model via `y2md config set-llm-model`, the system automatically checks if the model is available and offers to download it if not
+- **Streaming Downloads**: Model downloads use Ollama's streaming API with real-time progress tracking
+- **Config Auto-Update**: When downloading a specific model with `y2md model download <model-name>`, the configuration is automatically updated to use that model
+- **Smart Caching**: Model availability is cached for 30 seconds to improve performance
+- **User Confirmation**: Large downloads require user confirmation to prevent accidental downloads
+- **Error Recovery**: Clear error messages with actionable suggestions when downloads fail
+- **Availability Verification**: System verifies model installation after download completion
+
+### Supported LLM Providers
+
+- **Ollama**: Local LLM service (default)
+- **OpenAI**: OpenAI-compatible APIs
+- **LM Studio**: Local LLM service with OpenAI-compatible API
+
 ## LLM Integration
 
-For enhanced transcript formatting, you can use a local LLM via Ollama. The setup script (`download_model.sh`) automatically installs Ollama and downloads the required model.
+For enhanced transcript formatting, you can use various LLM providers. The setup script (`download_model.sh`) automatically installs Ollama and downloads the required model.
 
 ```bash
 # Use LLM formatting (after running download_model.sh)

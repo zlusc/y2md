@@ -1,3 +1,4 @@
+use config::{Config, File, FileFormat};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -28,6 +29,133 @@ pub enum Y2mdError {
     Config(String),
     #[error("Whisper error: {0}")]
     Whisper(String),
+    #[error("LLM configuration error: {0}")]
+    LlmConfig(String),
+    #[error("Config parsing error: {0}")]
+    ConfigParse(#[from] config::ConfigError),
+}
+
+/// LLM Provider configuration
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub enum LlmProvider {
+    #[serde(rename = "ollama")]
+    #[default]
+    Ollama,
+    #[serde(rename = "openai")]
+    OpenAI,
+    #[serde(rename = "lmstudio")]
+    LMStudio,
+}
+
+impl std::fmt::Display for LlmProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LlmProvider::Ollama => write!(f, "ollama"),
+            LlmProvider::OpenAI => write!(f, "openai"),
+            LlmProvider::LMStudio => write!(f, "lmstudio"),
+        }
+    }
+}
+
+/// LLM configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmConfig {
+    pub provider: LlmProvider,
+    pub model: String,
+    pub endpoint: Option<String>,
+    pub api_key: Option<String>,
+}
+
+impl Default for LlmConfig {
+    fn default() -> Self {
+        LlmConfig {
+            provider: LlmProvider::Ollama,
+            model: "mistral-nemo:12b-instruct-2407-q5_0".to_string(),
+            endpoint: None,
+            api_key: None,
+        }
+    }
+}
+
+/// Application configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppConfig {
+    pub llm: LlmConfig,
+    pub prefer_captions: bool,
+    pub default_language: String,
+    pub output_dir: Option<String>,
+    pub timestamps: bool,
+    pub compact: bool,
+    pub paragraph_length: usize,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        AppConfig {
+            llm: LlmConfig::default(),
+            prefer_captions: true,
+            default_language: "en".to_string(),
+            output_dir: None,
+            timestamps: false,
+            compact: false,
+            paragraph_length: 4,
+        }
+    }
+}
+
+impl AppConfig {
+    /// Load configuration from file or return default
+    pub fn load() -> Result<Self, Y2mdError> {
+        let config_dir = directories::ProjectDirs::from("com", "y2md", "y2md")
+            .ok_or_else(|| Y2mdError::Config("Could not determine config directory".to_string()))?;
+
+        let config_path = config_dir.config_dir().join("config.toml");
+
+        let mut config_builder = Config::builder();
+
+        // Add default configuration
+        config_builder =
+            config_builder.add_source(config::Config::try_from(&AppConfig::default())?);
+
+        // Add configuration file if it exists
+        if config_path.exists() {
+            config_builder =
+                config_builder.add_source(File::from(config_path).format(FileFormat::Toml));
+        }
+
+        let config = config_builder.build()?;
+
+        config
+            .try_deserialize()
+            .map_err(|e| Y2mdError::Config(format!("Failed to parse configuration: {}", e)))
+    }
+
+    /// Save configuration to file
+    pub fn save(&self) -> Result<(), Y2mdError> {
+        let config_dir = directories::ProjectDirs::from("com", "y2md", "y2md")
+            .ok_or_else(|| Y2mdError::Config("Could not determine config directory".to_string()))?;
+
+        // Create config directory if it doesn't exist
+        std::fs::create_dir_all(config_dir.config_dir())
+            .map_err(|e| Y2mdError::Config(format!("Failed to create config directory: {}", e)))?;
+
+        let config_path = config_dir.config_dir().join("config.toml");
+        let config_toml = toml::to_string_pretty(self)
+            .map_err(|e| Y2mdError::Config(format!("Failed to serialize configuration: {}", e)))?;
+
+        std::fs::write(&config_path, config_toml)
+            .map_err(|e| Y2mdError::Config(format!("Failed to write configuration file: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get configuration file path
+    pub fn config_path() -> Result<PathBuf, Y2mdError> {
+        let config_dir = directories::ProjectDirs::from("com", "y2md", "y2md")
+            .ok_or_else(|| Y2mdError::Config("Could not determine config directory".to_string()))?;
+
+        Ok(config_dir.config_dir().join("config.toml"))
+    }
 }
 
 /// Extract video ID from various YouTube URL formats
@@ -678,6 +806,7 @@ pub async fn format_markdown(
                     "LLM formatting failed: {}, falling back to standard formatting",
                     e
                 );
+                println!("Tip: Check your LLM configuration with 'y2md config show'");
                 format_transcript(transcript, compact, paragraph_length)
             }
         }
@@ -877,17 +1006,98 @@ pub fn format_transcript(transcript: &str, compact: bool, paragraph_length: usiz
     format_paragraphs(&cleaned, paragraph_length)
 }
 
-/// Apply LLM formatting to transcript using Ollama
+/// Apply LLM formatting to transcript using configured LLM
 pub async fn format_with_llm(transcript: &str) -> Result<String, Y2mdError> {
+    let config = AppConfig::load()?;
+
+    // Validate LLM configuration
+    validate_llm_config(&config.llm)?;
+
+    match config.llm.provider {
+        LlmProvider::Ollama => format_with_ollama(transcript, &config.llm).await,
+        LlmProvider::OpenAI => format_with_openai(transcript, &config.llm).await,
+        LlmProvider::LMStudio => format_with_lmstudio(transcript, &config.llm).await,
+    }
+}
+
+/// Validate LLM configuration
+fn validate_llm_config(llm_config: &LlmConfig) -> Result<(), Y2mdError> {
+    // Check if model name is provided
+    if llm_config.model.trim().is_empty() {
+        return Err(Y2mdError::LlmConfig(
+            "LLM model name cannot be empty".to_string(),
+        ));
+    }
+
+    // Validate provider-specific requirements
+    match llm_config.provider {
+        LlmProvider::OpenAI => {
+            // OpenAI requires API key
+            if llm_config.api_key.is_none() {
+                return Err(Y2mdError::LlmConfig(
+                    "OpenAI provider requires an API key".to_string(),
+                ));
+            }
+        }
+        LlmProvider::Ollama | LlmProvider::LMStudio => {
+            // These providers don't require API keys by default
+        }
+    }
+
+    Ok(())
+}
+
+/// Apply LLM formatting using Ollama
+async fn format_with_ollama(transcript: &str, llm_config: &LlmConfig) -> Result<String, Y2mdError> {
+    let endpoint = llm_config
+        .endpoint
+        .as_deref()
+        .unwrap_or("http://localhost:11434");
+
     // Check if Ollama service is available
     let client = reqwest::Client::new();
-    let health_check = client.get("http://localhost:11434/api/tags").send().await;
+    let health_check = client.get(format!("{}/api/tags", endpoint)).send().await;
 
     if health_check.is_err() {
-        return Err(Y2mdError::Config(
-            "Ollama service not available. Make sure Ollama is running on localhost:11434"
-                .to_string(),
-        ));
+        return Err(Y2mdError::LlmConfig(format!(
+            "Ollama service not available at {}. Make sure Ollama is running",
+            endpoint
+        )));
+    }
+
+    // Check if model is available
+    let model_check = client.get(format!("{}/api/tags", endpoint)).send().await;
+    if let Ok(response) = model_check {
+        if response.status().is_success() {
+            let models_json: serde_json::Value = response.json().await.map_err(|e| {
+                Y2mdError::LlmConfig(format!("Failed to parse Ollama models: {}", e))
+            })?;
+
+            let models = models_json["models"].as_array().ok_or_else(|| {
+                Y2mdError::LlmConfig(
+                    "Invalid response format from Ollama models endpoint".to_string(),
+                )
+            })?;
+
+            let model_exists = models.iter().any(|model| {
+                model["name"]
+                    .as_str()
+                    .map(|name| name.contains(&llm_config.model))
+                    .unwrap_or(false)
+            });
+
+            if !model_exists {
+                return Err(Y2mdError::LlmConfig(format!(
+                    "Model '{}' not found in Ollama. Available models: {}",
+                    llm_config.model,
+                    models
+                        .iter()
+                        .filter_map(|m| m["name"].as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
+            }
+        }
     }
 
     // Prepare the prompt for the LLM
@@ -907,21 +1117,28 @@ pub async fn format_with_llm(transcript: &str) -> Result<String, Y2mdError> {
 
     // Prepare the request payload
     let request_body = serde_json::json!({
-        "model": "mistral-nemo:12b-instruct-2407-q5_0",
+        "model": llm_config.model,
         "prompt": prompt,
         "stream": false
     });
 
-    // Send request to Ollama
+    // Send request to Ollama with timeout
     let response = client
-        .post("http://localhost:11434/api/generate")
+        .post(format!("{}/api/generate", endpoint))
         .json(&request_body)
+        .timeout(std::time::Duration::from_secs(120)) // 2 minute timeout
         .send()
         .await
-        .map_err(|e| Y2mdError::Config(format!("Failed to connect to Ollama: {}", e)))?;
+        .map_err(|e| {
+            if e.is_timeout() {
+                Y2mdError::LlmConfig("LLM request timed out after 2 minutes".to_string())
+            } else {
+                Y2mdError::LlmConfig(format!("Failed to connect to Ollama: {}", e))
+            }
+        })?;
 
     if !response.status().is_success() {
-        return Err(Y2mdError::Config(format!(
+        return Err(Y2mdError::LlmConfig(format!(
             "Ollama API returned error: {}",
             response.status()
         )));
@@ -931,22 +1148,116 @@ pub async fn format_with_llm(transcript: &str) -> Result<String, Y2mdError> {
     let response_json: serde_json::Value = response
         .json()
         .await
-        .map_err(|e| Y2mdError::Config(format!("Failed to parse Ollama response: {}", e)))?;
+        .map_err(|e| Y2mdError::LlmConfig(format!("Failed to parse Ollama response: {}", e)))?;
 
     // Extract the generated text
     let formatted_text = response_json["response"]
         .as_str()
-        .ok_or_else(|| Y2mdError::Config("Invalid response format from Ollama".to_string()))?
+        .ok_or_else(|| Y2mdError::LlmConfig("Invalid response format from Ollama".to_string()))?
         .trim()
         .to_string();
 
     if formatted_text.is_empty() {
-        return Err(Y2mdError::Config(
+        return Err(Y2mdError::LlmConfig(
             "Ollama returned empty response".to_string(),
         ));
     }
 
     Ok(formatted_text)
+}
+
+/// Apply LLM formatting using OpenAI-compatible API
+async fn format_with_openai(transcript: &str, llm_config: &LlmConfig) -> Result<String, Y2mdError> {
+    let endpoint = llm_config
+        .endpoint
+        .as_deref()
+        .unwrap_or("https://api.openai.com/v1");
+
+    let client = reqwest::Client::new();
+
+    // Prepare the prompt for the LLM
+    let prompt = format!(
+        "Please format the following transcript into well-structured markdown. 
+        Keep the original content but improve readability by:
+        - Organizing into logical paragraphs
+        - Fixing any grammar or punctuation issues
+        - Removing filler words if appropriate
+        - Maintaining the original meaning and tone
+        
+        Transcript:\n\n{}",
+        transcript
+    );
+
+    // Prepare the request payload
+    let request_body = serde_json::json!({
+        "model": llm_config.model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that formats transcripts into well-structured markdown."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.1
+    });
+
+    // Send request to OpenAI-compatible API with timeout
+    let mut request_builder = client
+        .post(format!("{}/chat/completions", endpoint))
+        .json(&request_body)
+        .timeout(std::time::Duration::from_secs(120)); // 2 minute timeout
+
+    if let Some(api_key) = &llm_config.api_key {
+        request_builder = request_builder.header("Authorization", format!("Bearer {}", api_key));
+    }
+
+    let response = request_builder.send().await.map_err(|e| {
+        if e.is_timeout() {
+            Y2mdError::LlmConfig("LLM request timed out after 2 minutes".to_string())
+        } else {
+            Y2mdError::LlmConfig(format!("Failed to connect to OpenAI API: {}", e))
+        }
+    })?;
+
+    if !response.status().is_success() {
+        return Err(Y2mdError::LlmConfig(format!(
+            "OpenAI API returned error: {}",
+            response.status()
+        )));
+    }
+
+    // Parse the response
+    let response_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| Y2mdError::LlmConfig(format!("Failed to parse OpenAI response: {}", e)))?;
+
+    // Extract the generated text
+    let formatted_text = response_json["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or_else(|| Y2mdError::LlmConfig("Invalid response format from OpenAI".to_string()))?
+        .trim()
+        .to_string();
+
+    if formatted_text.is_empty() {
+        return Err(Y2mdError::LlmConfig(
+            "OpenAI returned empty response".to_string(),
+        ));
+    }
+
+    Ok(formatted_text)
+}
+
+/// Apply LLM formatting using LM Studio
+async fn format_with_lmstudio(
+    transcript: &str,
+    llm_config: &LlmConfig,
+) -> Result<String, Y2mdError> {
+    // Use the OpenAI formatter since LM Studio is OpenAI-compatible
+    format_with_openai(transcript, llm_config).await
 }
 
 /// Clean and normalize transcript text
@@ -1205,5 +1516,269 @@ mod tests {
 
         // They should be different due to different paragraph lengths
         assert_ne!(enhanced_short, enhanced_long);
+    }
+}
+
+// ============================================================================
+// Ollama Model Management
+// ============================================================================
+
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+/// Ollama model management
+#[derive(Debug, Clone)]
+pub struct OllamaManager {
+    client: reqwest::Client,
+    endpoint: String,
+    cache: Arc<Mutex<ModelCache>>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ModelCache {
+    local_models: Vec<String>,
+    last_updated: Option<std::time::SystemTime>,
+}
+
+impl OllamaManager {
+    /// Create a new Ollama manager
+    pub fn new(endpoint: Option<String>) -> Self {
+        let endpoint = endpoint.unwrap_or_else(|| "http://localhost:11434".to_string());
+        Self {
+            client: reqwest::Client::new(),
+            endpoint,
+            cache: Arc::new(Mutex::new(ModelCache::default())),
+        }
+    }
+
+    /// Check if Ollama service is available
+    pub async fn is_available(&self) -> bool {
+        self.client
+            .get(format!("{}/api/tags", self.endpoint))
+            .send()
+            .await
+            .is_ok()
+    }
+
+    /// Get list of locally available models
+    pub async fn get_local_models(&self) -> Result<Vec<String>, Y2mdError> {
+        let mut cache = self.cache.lock().await;
+
+        // Use cache if recently updated (within 30 seconds)
+        if let Some(last_updated) = cache.last_updated {
+            if last_updated.elapsed().unwrap_or_default().as_secs() < 30 {
+                return Ok(cache.local_models.clone());
+            }
+        }
+
+        let response = self
+            .client
+            .get(format!("{}/api/tags", self.endpoint))
+            .send()
+            .await
+            .map_err(|e| Y2mdError::LlmConfig(format!("Failed to connect to Ollama: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(Y2mdError::LlmConfig(
+                "Ollama service not available".to_string(),
+            ));
+        }
+
+        let models_json: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| Y2mdError::LlmConfig(format!("Failed to parse Ollama models: {}", e)))?;
+
+        let models = models_json["models"].as_array().ok_or_else(|| {
+            Y2mdError::LlmConfig("Invalid response format from Ollama".to_string())
+        })?;
+
+        let model_names: Vec<String> = models
+            .iter()
+            .filter_map(|model| model["name"].as_str().map(|s| s.to_string()))
+            .collect();
+
+        // Update cache
+        cache.local_models = model_names.clone();
+        cache.last_updated = Some(std::time::SystemTime::now());
+
+        Ok(model_names)
+    }
+
+    /// Check if a specific model is available locally
+    pub async fn is_model_available(&self, model_name: &str) -> Result<bool, Y2mdError> {
+        let local_models = self.get_local_models().await?;
+        Ok(local_models.iter().any(|name| name.contains(model_name)))
+    }
+
+    /// Get model information including size
+    pub async fn get_model_info(&self, model_name: &str) -> Result<ModelInfo, Y2mdError> {
+        // First check if model exists locally
+        let local_models = self.get_local_models().await?;
+        if let Some(full_name) = local_models.iter().find(|name| name.contains(model_name)) {
+            return Ok(ModelInfo {
+                name: full_name.clone(),
+                size: None, // Size not available from local models endpoint
+                available: true,
+            });
+        }
+
+        // For remote models, we'd need to query Ollama's model library
+        // This is a simplified implementation
+        Ok(ModelInfo {
+            name: model_name.to_string(),
+            size: None, // Would need to query Ollama's model library
+            available: false,
+        })
+    }
+
+    /// Download a model with progress indication
+    pub async fn download_model(
+        &self,
+        model_name: &str,
+        progress_callback: Option<Box<dyn Fn(String, u64, u64) + Send + Sync>>,
+    ) -> Result<(), Y2mdError> {
+        let response = self
+            .client
+            .post(format!("{}/api/pull", self.endpoint))
+            .json(&serde_json::json!({
+                "name": model_name,
+                "stream": true
+            }))
+            .send()
+            .await
+            .map_err(|e| Y2mdError::LlmConfig(format!("Failed to start model download: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status_code = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(Y2mdError::LlmConfig(format!(
+                "Failed to download model: {} - {}",
+                status_code, error_text
+            )));
+        }
+
+        if let Some(callback) = &progress_callback {
+            callback("Starting download...".to_string(), 0, 0);
+        }
+
+        // Stream the response line by line
+        let mut download_completed = false;
+
+        // Read the response as text and process line by line
+        let response_text = response.text().await.map_err(|e| {
+            Y2mdError::LlmConfig(format!("Failed to read download response: {}", e))
+        })?;
+
+        for line in response_text.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+                if let Some(status) = json["status"].as_str() {
+                    if let Some(callback) = &progress_callback {
+                        callback(status.to_string(), 0, 0);
+                    }
+
+                    // Check for completion indicators
+                    if status == "success" || status.contains("complete") || status.contains("done")
+                    {
+                        download_completed = true;
+                    }
+                }
+            }
+        }
+
+        // If we didn't get a clear completion signal, wait a bit and check
+        if !download_completed {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        }
+
+        if let Some(callback) = &progress_callback {
+            callback("Download complete".to_string(), 100, 100);
+        }
+
+        // Verify the model was actually downloaded
+        let mut attempts = 0;
+        while attempts < 5 {
+            let available = self.is_model_available(model_name).await?;
+            if available {
+                break;
+            }
+            attempts += 1;
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+
+        let final_available = self.is_model_available(model_name).await?;
+
+        if !final_available {
+            return Err(Y2mdError::LlmConfig(format!(
+                "Model '{}' was not installed after download. Please check if the model name is correct and try again.",
+                model_name
+            )));
+        }
+
+        // Invalidate cache since we added a new model
+        let mut cache = self.cache.lock().await;
+        cache.last_updated = None;
+
+        Ok(())
+    }
+
+    /// Remove a model
+    pub async fn remove_model(&self, model_name: &str) -> Result<(), Y2mdError> {
+        let response = self
+            .client
+            .delete(format!("{}/api/delete", self.endpoint))
+            .json(&serde_json::json!({
+                "name": model_name
+            }))
+            .send()
+            .await
+            .map_err(|e| Y2mdError::LlmConfig(format!("Failed to remove model: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(Y2mdError::LlmConfig(format!(
+                "Failed to remove model: {}",
+                response.status()
+            )));
+        }
+
+        // Invalidate cache
+        let mut cache = self.cache.lock().await;
+        cache.last_updated = None;
+
+        Ok(())
+    }
+}
+
+/// Model information
+#[derive(Debug, Clone)]
+pub struct ModelInfo {
+    pub name: String,
+    pub size: Option<u64>, // Size in bytes
+    pub available: bool,
+}
+
+impl ModelInfo {
+    /// Get human-readable size
+    pub fn size_human(&self) -> Option<String> {
+        self.size.map(|bytes| {
+            const KB: u64 = 1024;
+            const MB: u64 = KB * 1024;
+            const GB: u64 = MB * 1024;
+
+            if bytes >= GB {
+                format!("{:.1} GB", bytes as f64 / GB as f64)
+            } else if bytes >= MB {
+                format!("{:.1} MB", bytes as f64 / MB as f64)
+            } else if bytes >= KB {
+                format!("{:.1} KB", bytes as f64 / KB as f64)
+            } else {
+                format!("{} bytes", bytes)
+            }
+        })
     }
 }

@@ -178,7 +178,7 @@ pub async fn extract_captions(
     video_id: &str,
     language: Option<&str>,
     force_formatting: bool,
-) -> Result<String, Y2mdError> {
+) -> Result<(String, String), Y2mdError> {
     let url = format!("https://www.youtube.com/watch?v={}", video_id);
     let lang = language.unwrap_or("en");
 
@@ -218,29 +218,29 @@ pub async fn extract_captions(
     let _ = std::fs::remove_file(&caption_filename);
 
     // Convert SRT to plain text
-    let plain_text = srt_to_plain_text(&caption_content);
+    let raw_text = srt_to_plain_text(&caption_content);
 
     // Only apply enhanced formatting if the text doesn't contain music notation
     // or other special formatting that should be preserved
     let formatted_text = if force_formatting {
         // Force enhanced formatting regardless of content
         println!("Applying enhanced formatting to captions...");
-        let result = format_transcript(&plain_text, false, 4);
+        let result = format_transcript(&raw_text, false, 4);
         println!("Formatting completed");
         result
-    } else if plain_text.contains('♪') || plain_text.contains('[') {
+    } else if raw_text.contains('♪') || raw_text.contains('[') {
         // Preserve original formatting for music videos and special content
         println!("Preserving original formatting for music/special content");
-        plain_text
+        raw_text.clone()
     } else {
         // Apply enhanced formatting for regular speech
         println!("Applying enhanced formatting to captions...");
-        let result = format_transcript(&plain_text, false, 4);
+        let result = format_transcript(&raw_text, false, 4);
         println!("Formatting completed");
         result
     };
 
-    Ok(formatted_text)
+    Ok((formatted_text, raw_text))
 }
 
 /// Convert SRT subtitle format to plain text
@@ -403,35 +403,45 @@ pub async fn transcribe_video(
     output_dir: &str,
     paragraph_length: usize,
     force_formatting: bool,
-) -> Result<(String, String), Y2mdError> {
+) -> Result<(String, String, String), Y2mdError> {
     let mut source = "whisper".to_string();
     let transcript;
 
+    let raw_transcript;
+    
     if prefer_captions {
         match check_captions_available(video_id).await {
             Ok(true) => {
-                transcript = extract_captions(video_id, language, force_formatting).await?;
+                let (formatted, raw) = extract_captions(video_id, language, force_formatting).await?;
+                transcript = formatted;
+                raw_transcript = raw;
                 source = "captions".to_string();
                 println!("Using captions for transcription");
             }
             Ok(false) => {
                 println!("No captions available, falling back to STT");
                 let audio_path = download_audio(video_id, output_dir).await?;
-                transcript = transcribe_audio(&audio_path, language, paragraph_length).await?;
+                let (formatted, raw) = transcribe_audio(&audio_path, language, paragraph_length).await?;
+                transcript = formatted;
+                raw_transcript = raw;
             }
             Err(e) => {
                 println!("Error checking captions: {}, falling back to STT", e);
                 let audio_path = download_audio(video_id, output_dir).await?;
-                transcript = transcribe_audio(&audio_path, language, paragraph_length).await?;
+                let (formatted, raw) = transcribe_audio(&audio_path, language, paragraph_length).await?;
+                transcript = formatted;
+                raw_transcript = raw;
             }
         }
     } else {
         println!("Using STT for transcription");
         let audio_path = download_audio(video_id, output_dir).await?;
-        transcript = transcribe_audio(&audio_path, language, paragraph_length).await?;
+        let (formatted, raw) = transcribe_audio(&audio_path, language, paragraph_length).await?;
+        transcript = formatted;
+        raw_transcript = raw;
     }
 
-    Ok((transcript, source))
+    Ok((transcript, source, raw_transcript))
 }
 
 /// Transcribe audio file using STT
@@ -439,7 +449,7 @@ pub async fn transcribe_audio(
     audio_path: &PathBuf,
     language: Option<&str>,
     paragraph_length: usize,
-) -> Result<String, Y2mdError> {
+) -> Result<(String, String), Y2mdError> {
     // Check if audio file exists
     if !audio_path.exists() {
         return Err(Y2mdError::Config(format!(
@@ -503,19 +513,19 @@ pub async fn transcribe_audio(
     progress_bar.set_message("Processing transcription segments...");
 
     // Collect all segments into a transcript
-    let mut transcript = String::new();
+    let mut raw_transcript = String::new();
     for segment in state.as_iter() {
         let segment_text = segment.to_string();
-        if !transcript.is_empty() {
-            transcript.push(' ');
+        if !raw_transcript.is_empty() {
+            raw_transcript.push(' ');
         }
-        transcript.push_str(&segment_text);
+        raw_transcript.push_str(&segment_text);
     }
 
     // Finish progress bar
     progress_bar.finish_with_message("Transcription completed");
 
-    if transcript.trim().is_empty() {
+    if raw_transcript.trim().is_empty() {
         return Err(Y2mdError::Whisper(
             "Transcription produced empty result".to_string(),
         ));
@@ -528,9 +538,9 @@ pub async fn transcribe_audio(
 
     // Apply formatting to STT output
     println!("Applying formatting to transcript...");
-    let formatted_transcript = format_transcript(&transcript, false, paragraph_length);
+    let formatted_transcript = format_transcript(&raw_transcript, false, paragraph_length);
     println!("Formatting completed");
-    Ok(formatted_transcript)
+    Ok((formatted_transcript, raw_transcript))
 }
 
 /// Determine which whisper model and language to use

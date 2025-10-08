@@ -59,6 +59,10 @@ struct Args {
     /// Dry run - don't write files
     #[arg(long, default_value_t = false)]
     dry_run: bool,
+
+    /// Save raw transcript to separate txt file
+    #[arg(long, default_value_t = false)]
+    save_raw: bool,
 }
 
 #[tokio::main]
@@ -85,7 +89,7 @@ async fn main() -> anyhow::Result<()> {
     println!("Output directory: {}", args.out_dir);
 
     // Perform transcription
-    let (transcript, source) = transcribe_video(
+    let (transcript, source, raw_transcript) = transcribe_video(
         &video_id,
         args.prefer_captions,
         args.lang.as_deref(),
@@ -137,6 +141,28 @@ async fn main() -> anyhow::Result<()> {
         // Save to file
         fs::write(&output_path, &markdown)?;
         println!("Transcription saved to: {}", output_path.display());
+    }
+
+    // Save raw transcript if requested
+    if args.save_raw {
+        let raw_filename = format!(
+            "{}_{}_{}_raw.txt",
+            chrono::Utc::now().format("%Y-%m-%d"),
+            video_id,
+            sanitized_title
+        );
+        let raw_output_path = std::path::Path::new(&args.out_dir).join(&raw_filename);
+        
+        if args.dry_run {
+            println!("Dry run - would save raw transcript to: {}", raw_output_path.display());
+            println!(
+                "Raw transcript preview (first 500 chars):\n{}",
+                &raw_transcript[..raw_transcript.len().min(500)]
+            );
+        } else {
+            fs::write(&raw_output_path, &raw_transcript)?;
+            println!("Raw transcript saved to: {}", raw_output_path.display());
+        }
     }
 
     // Calculate formatting statistics

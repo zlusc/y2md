@@ -27,10 +27,17 @@
 ## Key Dependencies
 - `clap` for CLI, `tracing` for logging
 - `yt-dlp` wrapper for downloads and captions extraction
+  - **Must be installed separately**: `python3 -m pip install yt-dlp` or via package manager
 - `whisper-rs` for STT (optional - requires cmake)
 - `reqwest` for HTTP, `serde` for serialization
 - `indicatif` for progress bars
 - `symphonia` for audio processing
+
+## External Dependencies
+- **yt-dlp**: Required for YouTube downloads and metadata
+  - Install: `python3 -m pip install yt-dlp` or `sudo apt install yt-dlp` (Ubuntu/Debian)
+- **FFmpeg**: Required for audio processing
+  - Install: `sudo apt install ffmpeg` (Ubuntu/Debian) or `brew install ffmpeg` (macOS)
 
 ## LLM Integration
 - Uses Ollama REST API for local LLM formatting

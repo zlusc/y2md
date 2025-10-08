@@ -24,7 +24,13 @@ A Rust CLI tool that converts YouTube videos to Markdown transcripts using speec
   - Install on macOS: `brew install ffmpeg`
   - Install on Windows: Download from [FFmpeg.org](https://ffmpeg.org/)
 
-- **yt-dlp**: Required for YouTube downloads (automatically installed)
+- **yt-dlp**: Required for YouTube downloads and metadata extraction
+  - Install via pip: `python3 -m pip install yt-dlp`
+  - Install on Arch Linux: `sudo pacman -S yt-dlp`
+  - Install on Ubuntu/Debian: `sudo apt install yt-dlp`
+  - Install on macOS: `brew install yt-dlp`
+  - Or download standalone binary: `sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && sudo chmod a+rx /usr/local/bin/yt-dlp`
+
 - **Whisper models**: Downloaded automatically via `download_model.sh`
 
 ## Installation

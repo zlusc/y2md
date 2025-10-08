@@ -152,9 +152,12 @@ async fn main() -> anyhow::Result<()> {
             sanitized_title
         );
         let raw_output_path = std::path::Path::new(&args.out_dir).join(&raw_filename);
-        
+
         if args.dry_run {
-            println!("Dry run - would save raw transcript to: {}", raw_output_path.display());
+            println!(
+                "Dry run - would save raw transcript to: {}",
+                raw_output_path.display()
+            );
             println!(
                 "Raw transcript preview (first 500 chars):\n{}",
                 &raw_transcript[..raw_transcript.len().min(500)]

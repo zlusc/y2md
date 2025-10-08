@@ -133,6 +133,17 @@ A small cross-platform CLI tool that, given a single YouTube URL, retrieves the 
 
 - **FFmpeg**: required by `yt-dlp` for audio extraction; detect presence and error nicely.
 
+### Installation Requirements
+
+- **yt-dlp**: Must be installed and available in system PATH
+  - Install via pip: `python3 -m pip install yt-dlp`
+  - Install via package manager (Arch: `sudo pacman -S yt-dlp`, Ubuntu/Debian: `sudo apt install yt-dlp`, macOS: `brew install yt-dlp`)
+  - Or download standalone binary: `sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && sudo chmod a+rx /usr/local/bin/yt-dlp`
+
+- **FFmpeg**: Required for audio processing
+  - Install via package manager (Ubuntu/Debian: `sudo apt install ffmpeg`, macOS: `brew install ffmpeg`)
+  - Or download from [FFmpeg.org](https://ffmpeg.org/)
+
 ### 7.3 Captions Layer
 
 - Attempt **YouTube Captions API** when configured (OAuth/API key). ([Google for Developers][1])

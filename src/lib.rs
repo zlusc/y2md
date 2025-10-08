@@ -95,9 +95,19 @@ pub async fn fetch_video_metadata(video_id: &str) -> Result<VideoMetadata, Y2mdE
     let url = format!("https://www.youtube.com/watch?v={}", video_id);
 
     // Use yt-dlp to get video metadata
-    let output = Command::new("/tmp/yt-dlp-venv/bin/yt-dlp")
+    let output = Command::new("yt-dlp")
         .args(["--dump-json", "--no-download", &url])
-        .output()?;
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Y2mdError::Config(
+                    "yt-dlp not found. Please install yt-dlp: https://github.com/yt-dlp/yt-dlp"
+                        .to_string(),
+                )
+            } else {
+                Y2mdError::Io(e)
+            }
+        })?;
 
     if !output.status.success() {
         return Err(Y2mdError::Config(
@@ -155,9 +165,19 @@ pub async fn check_captions_available(video_id: &str) -> Result<bool, Y2mdError>
     let url = format!("https://www.youtube.com/watch?v={}", video_id);
 
     // Use yt-dlp to list available captions
-    let output = Command::new("/tmp/yt-dlp-venv/bin/yt-dlp")
+    let output = Command::new("yt-dlp")
         .args(["--list-subs", "--no-download", &url])
-        .output()?;
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Y2mdError::Config(
+                    "yt-dlp not found. Please install yt-dlp: https://github.com/yt-dlp/yt-dlp"
+                        .to_string(),
+                )
+            } else {
+                Y2mdError::Io(e)
+            }
+        })?;
 
     if !output.status.success() {
         return Ok(false);
@@ -183,7 +203,7 @@ pub async fn extract_captions(
     let lang = language.unwrap_or("en");
 
     // Use yt-dlp to download captions
-    let output = Command::new("/tmp/yt-dlp-venv/bin/yt-dlp")
+    let output = Command::new("yt-dlp")
         .args([
             "--write-sub",
             "--write-auto-sub",
@@ -196,7 +216,17 @@ pub async fn extract_captions(
             "%(id)s_captions",
             &url,
         ])
-        .output()?;
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Y2mdError::Config(
+                    "yt-dlp not found. Please install yt-dlp: https://github.com/yt-dlp/yt-dlp"
+                        .to_string(),
+                )
+            } else {
+                Y2mdError::Io(e)
+            }
+        })?;
 
     if !output.status.success() {
         return Err(Y2mdError::Config("Failed to extract captions".to_string()));
@@ -335,7 +365,7 @@ pub async fn download_audio(video_id: &str, output_dir: &str) -> Result<PathBuf,
     // Use yt-dlp to download audio as WAV
     let output_template = output_path.join(format!("{}_audio", video_id));
 
-    let status = Command::new("/tmp/yt-dlp-venv/bin/yt-dlp")
+    let status = Command::new("yt-dlp")
         .args([
             "-x", // Extract audio
             "--audio-format",
@@ -346,7 +376,17 @@ pub async fn download_audio(video_id: &str, output_dir: &str) -> Result<PathBuf,
             output_template.to_str().unwrap(),
             &url,
         ])
-        .status()?;
+        .status()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Y2mdError::Config(
+                    "yt-dlp not found. Please install yt-dlp: https://github.com/yt-dlp/yt-dlp"
+                        .to_string(),
+                )
+            } else {
+                Y2mdError::Io(e)
+            }
+        })?;
 
     if !status.success() {
         return Err(Y2mdError::Config(
@@ -408,11 +448,12 @@ pub async fn transcribe_video(
     let transcript;
 
     let raw_transcript;
-    
+
     if prefer_captions {
         match check_captions_available(video_id).await {
             Ok(true) => {
-                let (formatted, raw) = extract_captions(video_id, language, force_formatting).await?;
+                let (formatted, raw) =
+                    extract_captions(video_id, language, force_formatting).await?;
                 transcript = formatted;
                 raw_transcript = raw;
                 source = "captions".to_string();
@@ -421,14 +462,16 @@ pub async fn transcribe_video(
             Ok(false) => {
                 println!("No captions available, falling back to STT");
                 let audio_path = download_audio(video_id, output_dir).await?;
-                let (formatted, raw) = transcribe_audio(&audio_path, language, paragraph_length).await?;
+                let (formatted, raw) =
+                    transcribe_audio(&audio_path, language, paragraph_length).await?;
                 transcript = formatted;
                 raw_transcript = raw;
             }
             Err(e) => {
                 println!("Error checking captions: {}, falling back to STT", e);
                 let audio_path = download_audio(video_id, output_dir).await?;
-                let (formatted, raw) = transcribe_audio(&audio_path, language, paragraph_length).await?;
+                let (formatted, raw) =
+                    transcribe_audio(&audio_path, language, paragraph_length).await?;
                 transcript = formatted;
                 raw_transcript = raw;
             }
@@ -996,7 +1039,7 @@ fn should_add_punctuation(word: &str, index: usize, total_words: usize) -> bool 
     }
 
     // Add punctuation at natural sentence boundaries
-    let is_long_phrase = index > 0 && index % 12 == 0; // Every ~12 words
+    let is_long_phrase = index > 0 && index.is_multiple_of(12); // Every ~12 words
     let is_near_end = index == total_words - 1;
 
     is_long_phrase || is_near_end

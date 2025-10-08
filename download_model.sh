@@ -16,6 +16,30 @@ LLM_MODEL="mistral-nemo:12b-instruct-2407-q5_0"
 
 echo "Setting up YouTube to Markdown Transcriber..."
 
+# Check for yt-dlp
+if ! command -v yt-dlp &> /dev/null; then
+    echo "ERROR: yt-dlp is not installed!"
+    echo ""
+    echo "Please install yt-dlp using one of these methods:"
+    echo "  - pip: python3 -m pip install yt-dlp"
+    echo "  - Arch Linux: sudo pacman -S yt-dlp"
+    echo "  - Ubuntu/Debian: sudo apt install yt-dlp"
+    echo "  - macOS: brew install yt-dlp"
+    echo "  - Or download standalone: sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && sudo chmod a+rx /usr/local/bin/yt-dlp"
+    echo ""
+    exit 1
+else
+    echo "✓ yt-dlp is installed"
+fi
+
+# Check for FFmpeg
+if ! command -v ffmpeg &> /dev/null; then
+    echo "WARNING: FFmpeg is not installed. Audio conversion may fail."
+    echo "  Install FFmpeg: sudo apt install ffmpeg (Ubuntu/Debian) or brew install ffmpeg (macOS)"
+else
+    echo "✓ FFmpeg is installed"
+fi
+
 # Create model directory
 mkdir -p "$MODEL_DIR"
 

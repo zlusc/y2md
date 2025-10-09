@@ -1,9 +1,10 @@
 use clap::{Parser, Subcommand};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::fs;
+use std::io::Write;
 use y2md::{
     fetch_video_metadata, format_markdown, transcribe_video, validate_youtube_url, AppConfig,
-    LlmProvider,
+    CredentialManager, LlmProvider, OAuthManager, ProviderConfig,
 };
 
 #[derive(Parser, Debug)]
@@ -84,6 +85,16 @@ enum Commands {
         #[command(subcommand)]
         action: ModelCommands,
     },
+    /// Provider management
+    Provider {
+        #[command(subcommand)]
+        action: ProviderCommands,
+    },
+    /// Authentication management
+    Auth {
+        #[command(subcommand)]
+        action: AuthCommands,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -92,7 +103,7 @@ enum ConfigCommands {
     Show,
     /// Set LLM provider
     SetLlmProvider {
-        /// LLM provider (ollama, openai, lmstudio)
+        /// LLM provider (ollama, openai, anthropic, lmstudio, custom)
         provider: String,
     },
     /// Set LLM model
@@ -152,6 +163,81 @@ enum ModelCommands {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum ProviderCommands {
+    /// List all configured providers
+    List,
+    /// Add a new provider
+    Add {
+        /// Provider name
+        name: String,
+        /// Provider type (ollama, openai, anthropic, lmstudio, custom)
+        #[arg(short, long)]
+        provider_type: String,
+        /// Model name
+        #[arg(short, long)]
+        model: String,
+        /// API endpoint (optional)
+        #[arg(short, long)]
+        endpoint: Option<String>,
+    },
+    /// Remove a provider
+    Remove {
+        /// Provider name
+        name: String,
+    },
+    /// Set the active provider
+    SetActive {
+        /// Provider name
+        name: String,
+    },
+    /// Show provider details
+    Show {
+        /// Provider name
+        name: String,
+    },
+    /// Set API key for a provider
+    SetApiKey {
+        /// Provider name
+        name: String,
+        /// API key (will prompt if not provided)
+        #[arg(short, long)]
+        api_key: Option<String>,
+    },
+    /// Remove API key for a provider
+    RemoveApiKey {
+        /// Provider name
+        name: String,
+    },
+    /// Test provider connection
+    Test {
+        /// Provider name (uses active if not specified)
+        name: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum AuthCommands {
+    /// Login to a provider using OAuth
+    Login {
+        /// Provider name
+        name: String,
+        /// OAuth client ID (optional, uses default if not provided)
+        #[arg(long)]
+        client_id: Option<String>,
+    },
+    /// Logout from a provider
+    Logout {
+        /// Provider name
+        name: String,
+    },
+    /// Show authentication status
+    Status {
+        /// Provider name (shows all if not specified)
+        name: Option<String>,
+    },
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -164,6 +250,12 @@ async fn main() -> anyhow::Result<()> {
             }
             Commands::Model { action } => {
                 return handle_model_command(action).await;
+            }
+            Commands::Provider { action } => {
+                return handle_provider_command(action).await;
+            }
+            Commands::Auth { action } => {
+                return handle_auth_command(action).await;
             }
         }
     }
@@ -336,11 +428,13 @@ async fn handle_config_command(action: ConfigCommands) -> anyhow::Result<()> {
             let provider = match provider.to_lowercase().as_str() {
                 "ollama" => LlmProvider::Ollama,
                 "openai" => LlmProvider::OpenAI,
+                "anthropic" => LlmProvider::Anthropic,
                 "lmstudio" => LlmProvider::LMStudio,
+                "custom" => LlmProvider::Custom,
                 _ => {
                     return Err(anyhow::anyhow!(
-                        "Invalid provider. Must be one of: ollama, openai, lmstudio"
-                    ))
+                    "Invalid provider. Must be one of: ollama, openai, anthropic, lmstudio, custom"
+                ))
                 }
             };
             config.llm.provider = provider;
@@ -643,5 +737,348 @@ async fn handle_model_command(command: ModelCommands) -> anyhow::Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+async fn handle_provider_command(command: ProviderCommands) -> anyhow::Result<()> {
+    let mut config = AppConfig::load()?;
+    let cred_manager = CredentialManager::new();
+
+    match command {
+        ProviderCommands::List => {
+            let providers = config.list_providers();
+
+            if providers.is_empty() {
+                println!("No providers configured.");
+                println!("\nTo add a provider, use: y2md provider add <name> --provider-type <type> --model <model>");
+                return Ok(());
+            }
+
+            println!("Configured providers:\n");
+            for provider in providers {
+                let is_active = config.active_provider.as_deref() == Some(&provider.name);
+                let has_key = cred_manager.has_api_key(&provider.name);
+
+                println!("  {} {}", if is_active { "●" } else { "○" }, provider.name);
+                println!("    Type: {}", provider.provider_type);
+                println!("    Model: {}", provider.model);
+                if let Some(endpoint) = &provider.endpoint {
+                    println!("    Endpoint: {}", endpoint);
+                }
+                println!(
+                    "    API Key: {}",
+                    if has_key {
+                        "✓ configured"
+                    } else {
+                        "✗ not set"
+                    }
+                );
+                println!();
+            }
+
+            if let Some(active) = &config.active_provider {
+                println!("Active provider: {}", active);
+            } else {
+                println!("No active provider set");
+            }
+        }
+        ProviderCommands::Add {
+            name,
+            provider_type,
+            model,
+            endpoint,
+        } => {
+            let provider_enum = match provider_type.to_lowercase().as_str() {
+                "ollama" => LlmProvider::Ollama,
+                "openai" => LlmProvider::OpenAI,
+                "anthropic" => LlmProvider::Anthropic,
+                "lmstudio" => LlmProvider::LMStudio,
+                "custom" => LlmProvider::Custom,
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "Invalid provider type. Must be one of: ollama, openai, anthropic, lmstudio, custom"
+                    ));
+                }
+            };
+
+            let provider = ProviderConfig {
+                name: name.clone(),
+                provider_type: provider_enum,
+                model,
+                endpoint,
+            };
+
+            config.add_provider(provider)?;
+
+            if config.active_provider.is_none() {
+                config.active_provider = Some(name.clone());
+                println!("✓ Provider '{}' added and set as active", name);
+            } else {
+                println!("✓ Provider '{}' added", name);
+            }
+
+            config.save()?;
+        }
+        ProviderCommands::Remove { name } => {
+            println!("⚠️  This will remove provider '{}'.", name);
+
+            if cred_manager.has_api_key(&name) {
+                println!("   This will also remove the stored API key.");
+            }
+
+            println!("   Do you want to continue? [y/N]");
+
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+
+            if !input.trim().eq_ignore_ascii_case("y") && !input.trim().eq_ignore_ascii_case("yes")
+            {
+                println!("Removal cancelled.");
+                return Ok(());
+            }
+
+            config.remove_provider(&name)?;
+            let _ = cred_manager.delete_api_key(&name);
+
+            config.save()?;
+            println!("✓ Provider '{}' removed", name);
+        }
+        ProviderCommands::SetActive { name } => {
+            config.set_active_provider(&name)?;
+            config.save()?;
+            println!("✓ Active provider set to '{}'", name);
+        }
+        ProviderCommands::Show { name } => {
+            let provider = config.get_provider(&name)?;
+            let has_key = cred_manager.has_api_key(&name);
+            let is_active = config.active_provider.as_deref() == Some(&name);
+
+            println!("Provider: {}", provider.name);
+            println!("  Type: {}", provider.provider_type);
+            println!("  Model: {}", provider.model);
+            if let Some(endpoint) = &provider.endpoint {
+                println!("  Endpoint: {}", endpoint);
+            }
+            println!(
+                "  API Key: {}",
+                if has_key {
+                    "✓ configured"
+                } else {
+                    "✗ not set"
+                }
+            );
+            println!("  Active: {}", if is_active { "yes" } else { "no" });
+        }
+        ProviderCommands::SetApiKey { name, api_key } => {
+            let _provider = config.get_provider(&name)?;
+
+            let key = if let Some(k) = api_key {
+                k
+            } else {
+                print!("Enter API key for '{}': ", name);
+                std::io::stdout().flush()?;
+
+                let key = rpassword::read_password()?;
+                key
+            };
+
+            cred_manager.set_api_key(&name, &key)?;
+            println!("✓ API key set for provider '{}'", name);
+        }
+        ProviderCommands::RemoveApiKey { name } => {
+            cred_manager.delete_api_key(&name)?;
+            println!("✓ API key removed for provider '{}'", name);
+        }
+        ProviderCommands::Test { name } => {
+            let provider_name = if let Some(n) = name {
+                n
+            } else {
+                config.active_provider.clone().ok_or_else(|| {
+                    anyhow::anyhow!("No active provider set. Use --name to specify a provider.")
+                })?
+            };
+
+            let provider = config.get_provider(&provider_name)?;
+            let _llm_config = config.get_llm_config_for_provider(provider, &cred_manager)?;
+
+            println!("Testing provider '{}'...", provider_name);
+            println!("  Type: {}", provider.provider_type);
+            println!("  Model: {}", provider.model);
+
+            let test_transcript =
+                "This is a test transcript to verify the LLM connection is working properly.";
+
+            match y2md::format_with_llm(test_transcript).await {
+                Ok(result) => {
+                    println!("✓ Provider test successful!");
+                    println!("\nTest output preview:");
+                    println!("{}", &result[..result.len().min(200)]);
+                    if result.len() > 200 {
+                        println!("...");
+                    }
+                }
+                Err(e) => {
+                    println!("✗ Provider test failed: {}", e);
+                    return Err(e.into());
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_auth_command(command: AuthCommands) -> anyhow::Result<()> {
+    let config = AppConfig::load()?;
+    let cred_manager = CredentialManager::new();
+    let oauth_manager = OAuthManager::new();
+
+    match command {
+        AuthCommands::Login { name, client_id } => {
+            let provider = config.get_provider(&name)?;
+
+            let default_client_id = match provider.provider_type {
+                LlmProvider::OpenAI => "y2md-cli",
+                LlmProvider::Anthropic => "y2md-cli",
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "OAuth authentication is only supported for OpenAI and Anthropic providers.\nFor {} providers, please use: y2md provider set-api-key {}",
+                        provider.provider_type,
+                        name
+                    ));
+                }
+            };
+
+            let client_id = client_id.as_deref().unwrap_or(default_client_id);
+
+            println!("Initiating OAuth login for provider '{}'...\n", name);
+
+            match oauth_manager
+                .device_code_flow(&provider.provider_type, client_id)
+                .await
+            {
+                Ok(token) => {
+                    cred_manager.set_oauth_token(&name, &token)?;
+                    println!("✅ Successfully authenticated with '{}'", name);
+
+                    if let Some(expires_at) = token.expires_at {
+                        let duration = std::time::Duration::from_secs(
+                            expires_at
+                                - std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs(),
+                        );
+                        println!("   Token expires in: {:?}", duration);
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Authentication failed: {}", e);
+                    return Err(e.into());
+                }
+            }
+        }
+        AuthCommands::Logout { name } => {
+            let _provider = config.get_provider(&name)?;
+
+            if cred_manager.has_oauth_token(&name) {
+                cred_manager.delete_oauth_token(&name)?;
+                println!("✅ Logged out from provider '{}'", name);
+            } else if cred_manager.has_api_key(&name) {
+                println!(
+                    "⚠️  Provider '{}' uses API key authentication, not OAuth.",
+                    name
+                );
+                println!(
+                    "   To remove the API key, use: y2md provider remove-api-key {}",
+                    name
+                );
+            } else {
+                println!("ℹ️  No authentication found for provider '{}'", name);
+            }
+        }
+        AuthCommands::Status { name } => {
+            if let Some(provider_name) = name {
+                let provider = config.get_provider(&provider_name)?;
+                show_auth_status(&cred_manager, &provider_name, &provider.provider_type)?;
+            } else {
+                let providers = config.list_providers();
+
+                if providers.is_empty() {
+                    println!("No providers configured.");
+                    return Ok(());
+                }
+
+                println!("Authentication status for all providers:\n");
+                for provider in providers {
+                    show_auth_status(&cred_manager, &provider.name, &provider.provider_type)?;
+                    println!();
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn show_auth_status(
+    cred_manager: &CredentialManager,
+    provider_name: &str,
+    provider_type: &LlmProvider,
+) -> anyhow::Result<()> {
+    println!("Provider: {}", provider_name);
+
+    if let Some(token) = cred_manager.get_oauth_token(provider_name)? {
+        println!("  Authentication: OAuth");
+        println!(
+            "  Status: {}",
+            if token.is_expired() {
+                "⚠️  Expired"
+            } else {
+                "✅ Valid"
+            }
+        );
+
+        if let Some(expires_at) = token.expires_at {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+
+            if expires_at > now {
+                let duration = std::time::Duration::from_secs(expires_at - now);
+                println!("  Expires in: {} hours", duration.as_secs() / 3600);
+            } else {
+                println!("  Expired: {} hours ago", (now - expires_at) / 3600);
+            }
+        }
+
+        println!(
+            "  Refresh token: {}",
+            if token.refresh_token.is_some() {
+                "Available"
+            } else {
+                "Not available"
+            }
+        );
+    } else if cred_manager.has_api_key(provider_name) {
+        println!("  Authentication: API Key");
+        println!("  Status: ✅ Configured");
+    } else {
+        println!("  Authentication: ❌ Not configured");
+
+        match provider_type {
+            LlmProvider::OpenAI | LlmProvider::Anthropic => {
+                println!("  Available methods:");
+                println!("    - OAuth: y2md auth login {}", provider_name);
+                println!("    - API Key: y2md provider set-api-key {}", provider_name);
+            }
+            _ => {
+                println!("  Available methods:");
+                println!("    - API Key: y2md provider set-api-key {}", provider_name);
+            }
+        }
+    }
+
     Ok(())
 }

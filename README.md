@@ -7,7 +7,7 @@ A powerful Rust CLI tool that converts YouTube videos to well-formatted Markdown
 - 🎯 **Simple & Intuitive** - One command to transcribe any YouTube video
 - 📝 **Smart Transcription** - Captions-first with Whisper STT fallback
 - 🤖 **LLM Enhancement** - Optional AI-powered formatting for better readability
-- 🔄 **Multiple LLM Providers** - Local (Ollama), OpenAI, Anthropic, or custom
+- 🔄 **Multiple LLM Providers** - Local (Ollama), OpenAI, Anthropic, DeepSeek, or custom
 - 🌍 **Multi-language Support** - Transcribe in English, Spanish, French, German, and more
 - 🔒 **Secure** - API keys stored in system keychain
 - ⚙️ **Configurable** - Simple TOML config file you can edit directly
@@ -88,6 +88,7 @@ y2md <YOUTUBE_URL> --llm
 y2md <YOUTUBE_URL> --llm local      # Use local Ollama
 y2md <YOUTUBE_URL> --llm openai     # Use OpenAI
 y2md <YOUTUBE_URL> --llm anthropic  # Use Anthropic
+y2md <YOUTUBE_URL> --llm deepseek   # Use DeepSeek
 
 # Common options
 y2md <URL> --out-dir ./transcripts  # Save to specific directory
@@ -131,6 +132,7 @@ y2md llm test openai   # Test specific provider
 # Set API key for a provider
 y2md llm set-key openai     # Prompts securely
 y2md llm set-key anthropic
+y2md llm set-key deepseek
 ```
 
 ## ⚙️ Configuration
@@ -154,7 +156,7 @@ paragraph_length = 4
 # LLM Configuration
 [llm]
 enabled = false                     # Use LLM by default?
-provider = "local"                  # local, openai, anthropic, custom
+provider = "local"                  # local, openai, anthropic, deepseek, custom
 
 # Local LLM (Ollama) - Free, private
 [llm.local]
@@ -170,6 +172,11 @@ model = "gpt-4-turbo-preview"
 [llm.anthropic]
 endpoint = "https://api.anthropic.com/v1"
 model = "claude-3-sonnet-20240229"
+
+# DeepSeek - High quality, competitive pricing (requires API key)
+[llm.deepseek]
+endpoint = "https://api.deepseek.com/v1"
+model = "deepseek-chat"  # Uses DeepSeek-V3.2-Exp (latest)
 
 # Custom OpenAI-compatible API
 [llm.custom]
@@ -234,9 +241,27 @@ y2md <URL> --llm anthropic
 
 # Alternative: Use environment variable
 export Y2MD_ANTHROPIC_API_KEY="sk-ant-your-key-here"
+export Y2MD_DEEPSEEK_API_KEY="sk-your-key-here"
 ```
 
-### Option 4: Custom OpenAI-Compatible API
+### Option 4: DeepSeek
+
+**Pros**: High quality, competitive pricing, latest V3.2 model  
+**Cons**: Costs money
+
+```bash
+# 1. Set API key
+y2md llm set-key deepseek
+# Enter your API key when prompted
+
+# 2. Use it!
+y2md <URL> --llm deepseek
+
+# Alternative: Use environment variable
+export Y2MD_DEEPSEEK_API_KEY="sk-your-key-here"
+```
+
+### Option 5: Custom OpenAI-Compatible API
 
 ```bash
 # Edit config file

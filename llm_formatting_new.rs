@@ -41,16 +41,25 @@ async fn format_with_local(
     }
 
     let prompt = format!(
-        "Please format the following transcript into well-structured markdown. 
-        Keep the original content but improve readability by:
-        - Organizing into logical paragraphs
-        - Fixing any grammar or punctuation issues
-        - Removing filler words if appropriate
-        - Maintaining the original meaning and tone
-        
-        Transcript:\n\n{}
-        
-        Formatted markdown:",
+        "Transform this raw transcript into a polished, well-structured markdown document. 
+
+**Formatting Guidelines:**
+- **Structure**: Create logical sections with appropriate headings (## for main sections, ### for subsections)
+- **Paragraphs**: Group related thoughts into coherent paragraphs (3-5 sentences each)
+- **Readability**: Fix grammar, punctuation, and sentence structure while preserving meaning
+- **Speaker Handling**: If multiple speakers are present, identify them clearly
+- **Content Enhancement**: 
+  - Remove excessive filler words (um, uh, like, you know)
+  - Improve flow between sentences and paragraphs
+  - Add emphasis with **bold** or *italic* where appropriate
+  - Use bullet points for lists and key takeaways
+  - Maintain the original speaker's tone and style
+
+**Transcript:**
+
+{}
+
+**Formatted Markdown:**",
         transcript
     );
 
@@ -109,14 +118,23 @@ async fn format_with_openai(
     let client = reqwest::Client::new();
 
     let prompt = format!(
-        "Please format the following transcript into well-structured markdown. 
-        Keep the original content but improve readability by:
-        - Organizing into logical paragraphs
-        - Fixing any grammar or punctuation issues
-        - Removing filler words if appropriate
-        - Maintaining the original meaning and tone
-        
-        Transcript:\n\n{}",
+        "Transform this raw transcript into a polished, well-structured markdown document. 
+
+**Formatting Guidelines:**
+- **Structure**: Create logical sections with appropriate headings (## for main sections, ### for subsections)
+- **Paragraphs**: Group related thoughts into coherent paragraphs (3-5 sentences each)
+- **Readability**: Fix grammar, punctuation, and sentence structure while preserving meaning
+- **Speaker Handling**: If multiple speakers are present, identify them clearly
+- **Content Enhancement**: 
+  - Remove excessive filler words (um, uh, like, you know)
+  - Improve flow between sentences and paragraphs
+  - Add emphasis with **bold** or *italic* where appropriate
+  - Use bullet points for lists and key takeaways
+  - Maintain the original speaker's tone and style
+
+**Transcript:**
+
+{}",
         transcript
     );
 
@@ -185,14 +203,23 @@ async fn format_with_anthropic(
     let client = reqwest::Client::new();
 
     let prompt = format!(
-        "Please format the following transcript into well-structured markdown. 
-        Keep the original content but improve readability by:
-        - Organizing into logical paragraphs
-        - Fixing any grammar or punctuation issues
-        - Removing filler words if appropriate
-        - Maintaining the original meaning and tone
-        
-        Transcript:\n\n{}",
+        "Transform this raw transcript into a polished, well-structured markdown document. 
+
+**Formatting Guidelines:**
+- **Structure**: Create logical sections with appropriate headings (## for main sections, ### for subsections)
+- **Paragraphs**: Group related thoughts into coherent paragraphs (3-5 sentences each)
+- **Readability**: Fix grammar, punctuation, and sentence structure while preserving meaning
+- **Speaker Handling**: If multiple speakers are present, identify them clearly
+- **Content Enhancement**: 
+  - Remove excessive filler words (um, uh, like, you know)
+  - Improve flow between sentences and paragraphs
+  - Add emphasis with **bold** or *italic* where appropriate
+  - Use bullet points for lists and key takeaways
+  - Maintain the original speaker's tone and style
+
+**Transcript:**
+
+{}",
         transcript
     );
 
@@ -266,14 +293,23 @@ async fn format_with_custom(
     let client = reqwest::Client::new();
 
     let prompt = format!(
-        "Please format the following transcript into well-structured markdown. 
-        Keep the original content but improve readability by:
-        - Organizing into logical paragraphs
-        - Fixing any grammar or punctuation issues
-        - Removing filler words if appropriate
-        - Maintaining the original meaning and tone
-        
-        Transcript:\n\n{}",
+        "Transform this raw transcript into a polished, well-structured markdown document. 
+
+**Formatting Guidelines:**
+- **Structure**: Create logical sections with appropriate headings (## for main sections, ### for subsections)
+- **Paragraphs**: Group related thoughts into coherent paragraphs (3-5 sentences each)
+- **Readability**: Fix grammar, punctuation, and sentence structure while preserving meaning
+- **Speaker Handling**: If multiple speakers are present, identify them clearly
+- **Content Enhancement**: 
+  - Remove excessive filler words (um, uh, like, you know)
+  - Improve flow between sentences and paragraphs
+  - Add emphasis with **bold** or *italic* where appropriate
+  - Use bullet points for lists and key takeaways
+  - Maintain the original speaker's tone and style
+
+**Transcript:**
+
+{}",
         transcript
     );
 

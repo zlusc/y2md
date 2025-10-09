@@ -46,15 +46,15 @@
   - `y2md config edit` - Open config in default editor
   - `y2md config path` - Show config file path
   - `y2md config reset` - Reset to default configuration
-- **LLM Providers**: Local (Ollama), OpenAI, Anthropic, Custom (OpenAI-compatible)
+- **LLM Providers**: Local (Ollama), OpenAI, Anthropic, DeepSeek, Custom (OpenAI-compatible)
 - **Direct Configuration**: Edit config.toml directly for all settings
 
 ## LLM Integration
-- **Multiple Providers**: Local (Ollama), OpenAI, Anthropic Claude, Custom (OpenAI-compatible)
+- **Multiple Providers**: Local (Ollama), OpenAI, Anthropic Claude, DeepSeek, Custom (OpenAI-compatible)
 - **Simple Provider Selection**: Use `--llm [provider]` flag or set default in config
 - **Provider Configuration**: Configure all providers in config.toml under `[llm.local]`, `[llm.openai]`, etc.
 - **API Key Management**: Set via `y2md llm set-key <provider>` or environment variables
-- **Environment Variables**: Support for `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
+- **Environment Variables**: Support for `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`
 - **Model Validation**: Checks model availability before use (Local/Ollama only)
 - **Timeout Handling**: 2-minute timeout with graceful fallback
 - **Fallback System**: Automatic fallback to standard formatting if LLM fails

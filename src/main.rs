@@ -164,7 +164,7 @@ async fn main() -> anyhow::Result<()> {
             // --llm <provider> specified
             let provider = provider_str.parse::<LlmProviderType>().map_err(|e| {
                 anyhow::anyhow!(
-                    "Invalid provider: {}. Valid providers: local, openai, anthropic, custom",
+                    "Invalid provider: {}. Valid providers: local, openai, anthropic, deepseek, custom",
                     e
                 )
             })?;
@@ -290,6 +290,7 @@ async fn handle_config_command(action: Option<ConfigCommands>) -> anyhow::Result
             println!("  Local endpoint: {}", config.llm.local.endpoint);
             println!("  OpenAI model: {}", config.llm.openai.model);
             println!("  Anthropic model: {}", config.llm.anthropic.model);
+            println!("  DeepSeek model: {}", config.llm.deepseek.model);
             if !config.llm.custom.endpoint.is_empty() {
                 println!("  Custom endpoint: {}", config.llm.custom.endpoint);
                 println!("  Custom model: {}", config.llm.custom.model);
@@ -477,7 +478,7 @@ async fn handle_llm_command(command: LlmCommands) -> anyhow::Result<()> {
         LlmCommands::SetKey { provider } => {
             let provider_type = provider.parse::<LlmProviderType>().map_err(|e| {
                 anyhow::anyhow!(
-                    "Invalid provider: {}. Valid providers: openai, anthropic, custom",
+                    "Invalid provider: {}. Valid providers: openai, anthropic, deepseek, custom",
                     e
                 )
             })?;

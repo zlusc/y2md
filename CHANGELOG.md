@@ -8,10 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **DeepSeek LLM Provider**: Added support for DeepSeek as a new LLM provider option
+  - Configure via `[llm.deepseek]` section in config.toml
+  - Set API key with `y2md llm set-key deepseek` or `DEEPSEEK_API_KEY` environment variable
+  - Uses OpenAI-compatible API endpoint at `https://api.deepseek.com/v1`
+  - Default model: `deepseek-chat`
+
 - **Enhanced Metadata Tracking**: Output markdown files now include comprehensive metadata about the formatting process:
   - `formatted_by`: Indicates whether the transcript was formatted by `"llm"` or `"standard"` fallback
-  - `llm_provider`: The LLM provider used for formatting (e.g., `"local"`, `"openai"`, `"anthropic"`, `"custom"`)
-  - `llm_model`: The specific model name used for formatting (e.g., `"claude-3-sonnet-20240229"`, `"gpt-4-turbo-preview"`)
+  - `llm_provider`: The LLM provider used for formatting (e.g., `"local"`, `"openai"`, `"anthropic"`, `"deepseek"`, `"custom"`)
+  - `llm_model`: The specific model name used for formatting (e.g., `"claude-3-sonnet-20240229"`, `"gpt-4-turbo-preview"`, `"deepseek-chat"`)
   - This metadata allows users to:
     - Track which LLM provider and model processed each transcript
     - Reproduce results with the same configuration

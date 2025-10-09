@@ -39,6 +39,7 @@ pub enum LlmProviderType {
     Local,
     OpenAI,
     Anthropic,
+    DeepSeek,
     Custom,
 }
 
@@ -54,6 +55,7 @@ impl std::fmt::Display for LlmProviderType {
             LlmProviderType::Local => write!(f, "local"),
             LlmProviderType::OpenAI => write!(f, "openai"),
             LlmProviderType::Anthropic => write!(f, "anthropic"),
+            LlmProviderType::DeepSeek => write!(f, "deepseek"),
             LlmProviderType::Custom => write!(f, "custom"),
         }
     }
@@ -67,6 +69,7 @@ impl std::str::FromStr for LlmProviderType {
             "local" => Ok(LlmProviderType::Local),
             "openai" => Ok(LlmProviderType::OpenAI),
             "anthropic" => Ok(LlmProviderType::Anthropic),
+            "deepseek" => Ok(LlmProviderType::DeepSeek),
             "custom" => Ok(LlmProviderType::Custom),
             _ => Err(format!("Unknown provider: {}", s)),
         }
@@ -119,6 +122,21 @@ impl Default for AnthropicConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeepSeekConfig {
+    pub endpoint: String,
+    pub model: String,
+}
+
+impl Default for DeepSeekConfig {
+    fn default() -> Self {
+        DeepSeekConfig {
+            endpoint: "https://api.deepseek.com/v1".to_string(),
+            model: "deepseek-chat".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomLlmConfig {
     pub endpoint: String,
     pub model: String,
@@ -140,6 +158,7 @@ pub struct LlmSettings {
     pub local: LocalLlmConfig,
     pub openai: OpenAiConfig,
     pub anthropic: AnthropicConfig,
+    pub deepseek: DeepSeekConfig,
     pub custom: CustomLlmConfig,
 }
 
@@ -151,6 +170,7 @@ impl Default for LlmSettings {
             local: LocalLlmConfig::default(),
             openai: OpenAiConfig::default(),
             anthropic: AnthropicConfig::default(),
+            deepseek: DeepSeekConfig::default(),
             custom: CustomLlmConfig::default(),
         }
     }
@@ -297,14 +317,29 @@ impl CredentialManager {
         api_key: &str,
     ) -> Result<(), Y2mdError> {
         let provider_name = provider_type.to_string();
-        let entry = keyring::Entry::new(&self.service_name, &provider_name)
-            .map_err(|e| Y2mdError::Config(format!("Failed to access keyring: {}", e)))?;
-
-        entry
-            .set_password(api_key)
-            .map_err(|e| Y2mdError::Config(format!("Failed to store API key in keyring: {}", e)))?;
-
-        Ok(())
+        
+        // Try keyring first
+        match keyring::Entry::new(&self.service_name, &provider_name) {
+            Ok(entry) => {
+                if let Err(e) = entry.set_password(api_key) {
+                    // Keyring failed, suggest environment variable
+                    let env_var_name = format!("Y2MD_{}_API_KEY", provider_name.to_uppercase());
+                    return Err(Y2mdError::Config(format!(
+                        "Failed to store API key in keyring: {}\n\nTo use environment variable instead, run:\n  export {}='your-api-key-here'",
+                        e, env_var_name
+                    )));
+                }
+                Ok(())
+            }
+            Err(e) => {
+                // Keyring not available, suggest environment variable
+                let env_var_name = format!("Y2MD_{}_API_KEY", provider_name.to_uppercase());
+                Err(Y2mdError::Config(format!(
+                    "Keyring not available: {}\n\nTo use environment variable instead, run:\n  export {}='your-api-key-here'",
+                    e, env_var_name
+                )))
+            }
+        }
     }
 
     pub fn delete_api_key(&self, provider_type: &LlmProviderType) -> Result<(), Y2mdError> {
@@ -991,6 +1026,7 @@ pub async fn format_markdown(
                         LlmProviderType::Local => cfg.llm.local.model.clone(),
                         LlmProviderType::OpenAI => cfg.llm.openai.model.clone(),
                         LlmProviderType::Anthropic => cfg.llm.anthropic.model.clone(),
+                        LlmProviderType::DeepSeek => cfg.llm.deepseek.model.clone(),
                         LlmProviderType::Custom => cfg.llm.custom.model.clone(),
                     });
                 }
@@ -1019,18 +1055,12 @@ pub async fn format_markdown(
     if let Some(model) = actual_llm_model {
         front_matter_addition.push_str(&format!("llm_model: \"{}\"\n", model));
     }
-    front_matter_addition.push_str("---\n\n");
 
     // Insert the formatting metadata before the closing --- of front matter
-    // Find the position of the first --- closing marker
+    // Find the position of the closing --- marker
     if let Some(pos) = markdown.find("---\n\n# ") {
+        // Insert the metadata before the closing ---
         markdown.insert_str(pos, &front_matter_addition);
-        // Remove the duplicate --- that we just added
-        let new_content = markdown.replace(
-            &format!("{}---\n\n", front_matter_addition),
-            &front_matter_addition,
-        );
-        markdown = new_content;
     }
 
     markdown.push_str(&formatted_transcript);
@@ -1257,6 +1287,16 @@ pub async fn format_with_llm(
                 })?;
             format_with_anthropic(transcript, &config.llm.anthropic, &api_key).await
         }
+        LlmProviderType::DeepSeek => {
+            let api_key = cred_manager
+                .get_api_key(&LlmProviderType::DeepSeek)?
+                .ok_or_else(|| {
+                    Y2mdError::Llm(
+                        "DeepSeek API key not set. Use: y2md llm set-key deepseek".to_string(),
+                    )
+                })?;
+            format_with_deepseek(transcript, &config.llm.deepseek, &api_key).await
+        }
         LlmProviderType::Custom => {
             let api_key = cred_manager.get_api_key(&LlmProviderType::Custom)?;
             format_with_custom(transcript, &config.llm.custom, api_key.as_deref()).await
@@ -1283,16 +1323,25 @@ async fn format_with_local(
     }
 
     let prompt = format!(
-        "Please format the following transcript into well-structured markdown. 
-        Keep the original content but improve readability by:
-        - Organizing into logical paragraphs
-        - Fixing any grammar or punctuation issues
-        - Removing filler words if appropriate
-        - Maintaining the original meaning and tone
-        
-        Transcript:\n\n{}
-        
-        Formatted markdown:",
+        "Transform this raw transcript into a polished, well-structured markdown document. 
+
+**Formatting Guidelines:**
+- **Structure**: Create logical sections with appropriate headings (## for main sections, ### for subsections)
+- **Paragraphs**: Group related thoughts into coherent paragraphs (3-5 sentences each)
+- **Readability**: Fix grammar, punctuation, and sentence structure while preserving meaning
+- **Speaker Handling**: If multiple speakers are present, identify them clearly
+- **Content Enhancement**: 
+  - Remove excessive filler words (um, uh, like, you know)
+  - Improve flow between sentences and paragraphs
+  - Add emphasis with **bold** or *italic* where appropriate
+  - Use bullet points for lists and key takeaways
+  - Maintain the original speaker's tone and style
+
+**Transcript:**
+
+{}
+
+**Formatted Markdown:**",
         transcript
     );
 
@@ -1349,14 +1398,23 @@ async fn format_with_openai(
     let client = reqwest::Client::new();
 
     let prompt = format!(
-        "Please format the following transcript into well-structured markdown. 
-        Keep the original content but improve readability by:
-        - Organizing into logical paragraphs
-        - Fixing any grammar or punctuation issues
-        - Removing filler words if appropriate
-        - Maintaining the original meaning and tone
-        
-        Transcript:\n\n{}",
+        "Transform this raw transcript into a polished, well-structured markdown document. 
+
+**Formatting Guidelines:**
+- **Structure**: Create logical sections with appropriate headings (## for main sections, ### for subsections)
+- **Paragraphs**: Group related thoughts into coherent paragraphs (3-5 sentences each)
+- **Readability**: Fix grammar, punctuation, and sentence structure while preserving meaning
+- **Speaker Handling**: If multiple speakers are present, identify them clearly
+- **Content Enhancement**: 
+  - Remove excessive filler words (um, uh, like, you know)
+  - Improve flow between sentences and paragraphs
+  - Add emphasis with **bold** or *italic* where appropriate
+  - Use bullet points for lists and key takeaways
+  - Maintain the original speaker's tone and style
+
+**Transcript:**
+
+{}",
         transcript
     );
 
@@ -1423,14 +1481,23 @@ async fn format_with_anthropic(
     let client = reqwest::Client::new();
 
     let prompt = format!(
-        "Please format the following transcript into well-structured markdown. 
-        Keep the original content but improve readability by:
-        - Organizing into logical paragraphs
-        - Fixing any grammar or punctuation issues
-        - Removing filler words if appropriate
-        - Maintaining the original meaning and tone
-        
-        Transcript:\n\n{}",
+        "Transform this raw transcript into a polished, well-structured markdown document. 
+
+**Formatting Guidelines:**
+- **Structure**: Create logical sections with appropriate headings (## for main sections, ### for subsections)
+- **Paragraphs**: Group related thoughts into coherent paragraphs (3-5 sentences each)
+- **Readability**: Fix grammar, punctuation, and sentence structure while preserving meaning
+- **Speaker Handling**: If multiple speakers are present, identify them clearly
+- **Content Enhancement**: 
+  - Remove excessive filler words (um, uh, like, you know)
+  - Improve flow between sentences and paragraphs
+  - Add emphasis with **bold** or *italic* where appropriate
+  - Use bullet points for lists and key takeaways
+  - Maintain the original speaker's tone and style
+
+**Transcript:**
+
+{}",
         transcript
     );
 
@@ -1484,6 +1551,82 @@ async fn format_with_anthropic(
     if formatted_text.is_empty() {
         return Err(Y2mdError::Llm(
             "Anthropic returned empty response".to_string(),
+        ));
+    }
+
+    Ok(formatted_text)
+}
+
+async fn format_with_deepseek(
+    transcript: &str,
+    llm_config: &DeepSeekConfig,
+    api_key: &str,
+) -> Result<String, Y2mdError> {
+    let client = reqwest::Client::new();
+
+    let prompt = format!(
+        "Please format the following transcript into well-structured markdown. 
+        Keep the original content but improve readability by:
+        - Organizing into logical paragraphs
+        - Fixing any grammar or punctuation issues
+        - Removing filler words if appropriate
+        - Maintaining the original meaning and tone
+        
+        Transcript:\n\n{}",
+        transcript
+    );
+
+    let request_body = serde_json::json!({
+        "model": llm_config.model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that formats transcripts into well-structured markdown."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.1
+    });
+
+    let response = client
+        .post(format!("{}/chat/completions", llm_config.endpoint))
+        .header("Authorization", format!("Bearer {}", api_key))
+        .json(&request_body)
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(|e| {
+            if e.is_timeout() {
+                Y2mdError::Llm("LLM request timed out after 2 minutes".to_string())
+            } else {
+                Y2mdError::Llm(format!("Failed to connect to DeepSeek API: {}", e))
+            }
+        })?;
+
+    if !response.status().is_success() {
+        return Err(Y2mdError::Llm(format!(
+            "DeepSeek API returned error: {}",
+            response.status()
+        )));
+    }
+
+    let response_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| Y2mdError::Llm(format!("Failed to parse DeepSeek response: {}", e)))?;
+
+    let formatted_text = response_json["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or_else(|| Y2mdError::Llm("Invalid response format from DeepSeek".to_string()))?
+        .trim()
+        .to_string();
+
+    if formatted_text.is_empty() {
+        return Err(Y2mdError::Llm(
+            "DeepSeek returned empty response".to_string(),
         ));
     }
 

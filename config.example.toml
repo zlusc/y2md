@@ -45,6 +45,12 @@ model = "gpt-4-turbo-preview"
 endpoint = "https://api.anthropic.com/v1"
 model = "claude-3-sonnet-20240229"
 
+# DeepSeek
+# Set API key with: y2md llm set-key deepseek
+[llm.deepseek]
+endpoint = "https://api.deepseek.com/v1"
+model = "deepseek-chat"  # Uses DeepSeek-V3.2-Exp (latest)
+
 # Custom OpenAI-compatible API (Groq, Together AI, etc.)
 # Set API key with: y2md llm set-key custom
 [llm.custom]

@@ -1,4 +1,3 @@
-use config::{Config, File, FileFormat};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -30,226 +29,292 @@ pub enum Y2mdError {
     Config(String),
     #[error("Whisper error: {0}")]
     Whisper(String),
-    #[error("LLM configuration error: {0}")]
-    LlmConfig(String),
-    #[error("Config parsing error: {0}")]
-    ConfigParse(#[from] config::ConfigError),
+    #[error("LLM error: {0}")]
+    Llm(String),
 }
 
-/// LLM Provider configuration
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub enum LlmProvider {
-    #[serde(rename = "ollama")]
-    #[default]
-    Ollama,
-    #[serde(rename = "openai")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum LlmProviderType {
+    Local,
     OpenAI,
-    #[serde(rename = "anthropic")]
     Anthropic,
-    #[serde(rename = "lmstudio")]
-    LMStudio,
-    #[serde(rename = "custom")]
     Custom,
 }
 
-impl std::fmt::Display for LlmProvider {
+impl Default for LlmProviderType {
+    fn default() -> Self {
+        LlmProviderType::Local
+    }
+}
+
+impl std::fmt::Display for LlmProviderType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LlmProvider::Ollama => write!(f, "ollama"),
-            LlmProvider::OpenAI => write!(f, "openai"),
-            LlmProvider::Anthropic => write!(f, "anthropic"),
-            LlmProvider::LMStudio => write!(f, "lmstudio"),
-            LlmProvider::Custom => write!(f, "custom"),
+            LlmProviderType::Local => write!(f, "local"),
+            LlmProviderType::OpenAI => write!(f, "openai"),
+            LlmProviderType::Anthropic => write!(f, "anthropic"),
+            LlmProviderType::Custom => write!(f, "custom"),
         }
     }
 }
 
-/// LLM configuration
+impl std::str::FromStr for LlmProviderType {
+    type Err = String;
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "local" => Ok(LlmProviderType::Local),
+            "openai" => Ok(LlmProviderType::OpenAI),
+            "anthropic" => Ok(LlmProviderType::Anthropic),
+            "custom" => Ok(LlmProviderType::Custom),
+            _ => Err(format!("Unknown provider: {}", s)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlmConfig {
-    pub provider: LlmProvider,
+pub struct LocalLlmConfig {
+    pub endpoint: String,
     pub model: String,
-    pub endpoint: Option<String>,
-    pub api_key: Option<String>,
 }
 
-impl Default for LlmConfig {
+impl Default for LocalLlmConfig {
     fn default() -> Self {
-        LlmConfig {
-            provider: LlmProvider::Ollama,
+        LocalLlmConfig {
+            endpoint: "http://localhost:11434".to_string(),
             model: "mistral-nemo:12b-instruct-2407-q5_0".to_string(),
-            endpoint: None,
-            api_key: None,
         }
     }
 }
 
-/// Application configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenAiConfig {
+    pub endpoint: String,
+    pub model: String,
+}
+
+impl Default for OpenAiConfig {
+    fn default() -> Self {
+        OpenAiConfig {
+            endpoint: "https://api.openai.com/v1".to_string(),
+            model: "gpt-4-turbo-preview".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnthropicConfig {
+    pub endpoint: String,
+    pub model: String,
+}
+
+impl Default for AnthropicConfig {
+    fn default() -> Self {
+        AnthropicConfig {
+            endpoint: "https://api.anthropic.com/v1".to_string(),
+            model: "claude-3-sonnet-20240229".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomLlmConfig {
+    pub endpoint: String,
+    pub model: String,
+}
+
+impl Default for CustomLlmConfig {
+    fn default() -> Self {
+        CustomLlmConfig {
+            endpoint: "".to_string(),
+            model: "".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmSettings {
+    pub enabled: bool,
+    pub provider: LlmProviderType,
+    pub local: LocalLlmConfig,
+    pub openai: OpenAiConfig,
+    pub anthropic: AnthropicConfig,
+    pub custom: CustomLlmConfig,
+}
+
+impl Default for LlmSettings {
+    fn default() -> Self {
+        LlmSettings {
+            enabled: false,
+            provider: LlmProviderType::Local,
+            local: LocalLlmConfig::default(),
+            openai: OpenAiConfig::default(),
+            anthropic: AnthropicConfig::default(),
+            custom: CustomLlmConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedSettings {
+    pub whisper_model: String,
+    pub whisper_threads: usize,
+    pub cache_audio: bool,
+}
+
+impl Default for AdvancedSettings {
+    fn default() -> Self {
+        AdvancedSettings {
+            whisper_model: "base".to_string(),
+            whisper_threads: 4,
+            cache_audio: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
-    pub llm: LlmConfig,
-    pub active_provider: Option<String>,
-    pub providers: HashMap<String, ProviderConfig>,
-    pub prefer_captions: bool,
+    pub output_dir: String,
     pub default_language: String,
-    pub output_dir: Option<String>,
+    pub prefer_captions: bool,
     pub timestamps: bool,
     pub compact: bool,
     pub paragraph_length: usize,
+    pub llm: LlmSettings,
+    pub advanced: AdvancedSettings,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
-            llm: LlmConfig::default(),
-            active_provider: None,
-            providers: HashMap::new(),
-            prefer_captions: true,
+            output_dir: ".".to_string(),
             default_language: "en".to_string(),
-            output_dir: None,
+            prefer_captions: true,
             timestamps: false,
             compact: false,
             paragraph_length: 4,
+            llm: LlmSettings::default(),
+            advanced: AdvancedSettings::default(),
         }
     }
 }
 
 impl AppConfig {
-    /// Load configuration from file or return default
     pub fn load() -> Result<Self, Y2mdError> {
         let config_dir = directories::ProjectDirs::from("com", "y2md", "y2md")
             .ok_or_else(|| Y2mdError::Config("Could not determine config directory".to_string()))?;
 
         let config_path = config_dir.config_dir().join("config.toml");
 
-        let mut config_builder = Config::builder();
-
-        // Add default configuration
-        config_builder =
-            config_builder.add_source(config::Config::try_from(&AppConfig::default())?);
-
-        // Add configuration file if it exists
-        if config_path.exists() {
-            config_builder =
-                config_builder.add_source(File::from(config_path).format(FileFormat::Toml));
+        if !config_path.exists() {
+            return Ok(AppConfig::default());
         }
 
-        let config = config_builder.build()?;
+        let config_content = std::fs::read_to_string(&config_path)
+            .map_err(|e| Y2mdError::Config(format!("Failed to read config file: {}", e)))?;
 
-        config
-            .try_deserialize()
-            .map_err(|e| Y2mdError::Config(format!("Failed to parse configuration: {}", e)))
+        toml::from_str::<AppConfig>(&config_content)
+            .map_err(|e| Y2mdError::Config(format!("Failed to parse config: {}\n\nPlease check your config file at: {}", e, config_path.display())))
     }
 
-    /// Save configuration to file
     pub fn save(&self) -> Result<(), Y2mdError> {
         let config_dir = directories::ProjectDirs::from("com", "y2md", "y2md")
             .ok_or_else(|| Y2mdError::Config("Could not determine config directory".to_string()))?;
 
-        // Create config directory if it doesn't exist
         std::fs::create_dir_all(config_dir.config_dir())
             .map_err(|e| Y2mdError::Config(format!("Failed to create config directory: {}", e)))?;
 
         let config_path = config_dir.config_dir().join("config.toml");
+        
+        let header = r#"# =============================================================================
+# Y2MD Configuration
+# Edit this file directly or use: y2md config edit
+# =============================================================================
+
+"#;
+        
         let config_toml = toml::to_string_pretty(self)
             .map_err(|e| Y2mdError::Config(format!("Failed to serialize configuration: {}", e)))?;
 
-        std::fs::write(&config_path, config_toml)
+        std::fs::write(&config_path, format!("{}{}", header, config_toml))
             .map_err(|e| Y2mdError::Config(format!("Failed to write configuration file: {}", e)))?;
 
         Ok(())
     }
 
-    /// Get configuration file path
     pub fn config_path() -> Result<PathBuf, Y2mdError> {
         let config_dir = directories::ProjectDirs::from("com", "y2md", "y2md")
             .ok_or_else(|| Y2mdError::Config("Could not determine config directory".to_string()))?;
 
         Ok(config_dir.config_dir().join("config.toml"))
     }
+}
 
-    pub fn add_provider(&mut self, provider: ProviderConfig) -> Result<(), Y2mdError> {
-        if self.providers.contains_key(&provider.name) {
-            return Err(Y2mdError::Config(format!(
-                "Provider '{}' already exists",
-                provider.name
-            )));
+pub struct CredentialManager {
+    service_name: String,
+}
+
+impl CredentialManager {
+    pub fn new() -> Self {
+        Self {
+            service_name: "y2md".to_string(),
         }
-        self.providers.insert(provider.name.clone(), provider);
+    }
+
+    pub fn get_api_key(&self, provider_type: &LlmProviderType) -> Result<Option<String>, Y2mdError> {
+        let provider_name = provider_type.to_string();
+        let env_var_name = format!("Y2MD_{}_API_KEY", provider_name.to_uppercase());
+        
+        if let Ok(key) = std::env::var(&env_var_name) {
+            return Ok(Some(key));
+        }
+
+        let entry = keyring::Entry::new(&self.service_name, &provider_name)
+            .map_err(|e| Y2mdError::Config(format!("Failed to access keyring: {}", e)))?;
+
+        match entry.get_password() {
+            Ok(password) => Ok(Some(password)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(Y2mdError::Config(format!(
+                "Failed to retrieve API key from keyring: {}",
+                e
+            ))),
+        }
+    }
+
+    pub fn set_api_key(&self, provider_type: &LlmProviderType, api_key: &str) -> Result<(), Y2mdError> {
+        let provider_name = provider_type.to_string();
+        let entry = keyring::Entry::new(&self.service_name, &provider_name)
+            .map_err(|e| Y2mdError::Config(format!("Failed to access keyring: {}", e)))?;
+
+        entry
+            .set_password(api_key)
+            .map_err(|e| Y2mdError::Config(format!("Failed to store API key in keyring: {}", e)))?;
+
         Ok(())
     }
 
-    pub fn remove_provider(&mut self, name: &str) -> Result<(), Y2mdError> {
-        if !self.providers.contains_key(name) {
-            return Err(Y2mdError::Config(format!("Provider '{}' not found", name)));
-        }
+    pub fn delete_api_key(&self, provider_type: &LlmProviderType) -> Result<(), Y2mdError> {
+        let provider_name = provider_type.to_string();
+        let entry = keyring::Entry::new(&self.service_name, &provider_name)
+            .map_err(|e| Y2mdError::Config(format!("Failed to access keyring: {}", e)))?;
 
-        if self.active_provider.as_deref() == Some(name) {
-            self.active_provider = None;
-        }
-
-        self.providers.remove(name);
-        Ok(())
-    }
-
-    pub fn get_provider(&self, name: &str) -> Result<&ProviderConfig, Y2mdError> {
-        self.providers
-            .get(name)
-            .ok_or_else(|| Y2mdError::Config(format!("Provider '{}' not found", name)))
-    }
-
-    pub fn get_active_provider(&self) -> Result<&ProviderConfig, Y2mdError> {
-        if let Some(active_name) = &self.active_provider {
-            self.get_provider(active_name)
-        } else {
-            Err(Y2mdError::Config("No active provider set".to_string()))
+        match entry.delete_password() {
+            Ok(()) => Ok(()),
+            Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(Y2mdError::Config(format!(
+                "Failed to delete API key from keyring: {}",
+                e
+            ))),
         }
     }
 
-    pub fn set_active_provider(&mut self, name: &str) -> Result<(), Y2mdError> {
-        if !self.providers.contains_key(name) {
-            return Err(Y2mdError::Config(format!("Provider '{}' not found", name)));
-        }
-        self.active_provider = Some(name.to_string());
-        Ok(())
-    }
-
-    pub fn list_providers(&self) -> Vec<&ProviderConfig> {
-        self.providers.values().collect()
-    }
-
-    pub fn get_llm_config_for_provider(
-        &self,
-        provider: &ProviderConfig,
-        cred_manager: &CredentialManager,
-    ) -> Result<LlmConfig, Y2mdError> {
-        let mut api_key = None;
-
-        if let Some(token) = cred_manager.get_oauth_token(&provider.name)? {
-            if !token.is_expired() {
-                api_key = Some(token.access_token);
-            } else if token.refresh_token.is_some() {
-                return Err(Y2mdError::Config(format!(
-                    "OAuth token expired for provider '{}'. Please login again: y2md auth login {}",
-                    provider.name, provider.name
-                )));
-            }
-        }
-
-        if api_key.is_none() {
-            api_key = cred_manager.get_api_key(&provider.name)?;
-        }
-
-        Ok(LlmConfig {
-            provider: provider.provider_type.clone(),
-            model: provider.model.clone(),
-            endpoint: provider.endpoint.clone(),
-            api_key,
-        })
+    pub fn has_api_key(&self, provider_type: &LlmProviderType) -> bool {
+        self.get_api_key(provider_type).ok().flatten().is_some()
     }
 }
 
-/// Extract video ID from various YouTube URL formats
 pub fn extract_video_id(url: &str) -> Result<String, Y2mdError> {
     let url = url.trim();
 
@@ -850,6 +915,7 @@ pub async fn format_markdown(
     compact: bool,
     paragraph_length: usize,
     use_llm: bool,
+    llm_provider: Option<LlmProviderType>,
 ) -> String {
     let mut markdown = String::new();
 
@@ -887,7 +953,7 @@ pub async fn format_markdown(
     // Use enhanced formatting for better readability
     let formatted_transcript = if use_llm {
         println!("Using LLM for enhanced formatting...");
-        match format_with_llm(transcript).await {
+        match format_with_llm(transcript, llm_provider).await {
             Ok(llm_formatted) => {
                 println!("LLM formatting completed successfully");
                 llm_formatted
@@ -897,7 +963,7 @@ pub async fn format_markdown(
                     "LLM formatting failed: {}, falling back to standard formatting",
                     e
                 );
-                println!("Tip: Check your LLM configuration with 'y2md config show'");
+                println!("Tip: Check your LLM configuration with 'y2md config'");
                 format_transcript(transcript, compact, paragraph_length)
             }
         }
@@ -1097,106 +1163,48 @@ pub fn format_transcript(transcript: &str, compact: bool, paragraph_length: usiz
     format_paragraphs(&cleaned, paragraph_length)
 }
 
-/// Apply LLM formatting to transcript using configured LLM
-pub async fn format_with_llm(transcript: &str) -> Result<String, Y2mdError> {
+pub async fn format_with_llm(transcript: &str, provider_override: Option<LlmProviderType>) -> Result<String, Y2mdError> {
     let config = AppConfig::load()?;
+    let cred_manager = CredentialManager::new();
 
-    // Validate LLM configuration
-    validate_llm_config(&config.llm)?;
+    let provider = provider_override.unwrap_or(config.llm.provider.clone());
 
-    match config.llm.provider {
-        LlmProvider::Ollama => format_with_ollama(transcript, &config.llm).await,
-        LlmProvider::OpenAI => format_with_openai(transcript, &config.llm).await,
-        LlmProvider::Anthropic => format_with_anthropic(transcript, &config.llm).await,
-        LlmProvider::LMStudio => format_with_lmstudio(transcript, &config.llm).await,
-        LlmProvider::Custom => format_with_custom(transcript, &config.llm).await,
+    match provider {
+        LlmProviderType::Local => {
+            format_with_local(transcript, &config.llm.local).await
+        }
+        LlmProviderType::OpenAI => {
+            let api_key = cred_manager.get_api_key(&LlmProviderType::OpenAI)?
+                .ok_or_else(|| Y2mdError::Llm("OpenAI API key not set. Use: y2md llm set-key openai".to_string()))?;
+            format_with_openai(transcript, &config.llm.openai, &api_key).await
+        }
+        LlmProviderType::Anthropic => {
+            let api_key = cred_manager.get_api_key(&LlmProviderType::Anthropic)?
+                .ok_or_else(|| Y2mdError::Llm("Anthropic API key not set. Use: y2md llm set-key anthropic".to_string()))?;
+            format_with_anthropic(transcript, &config.llm.anthropic, &api_key).await
+        }
+        LlmProviderType::Custom => {
+            let api_key = cred_manager.get_api_key(&LlmProviderType::Custom)?;
+            format_with_custom(transcript, &config.llm.custom, api_key.as_deref()).await
+        }
     }
 }
 
-/// Validate LLM configuration
-fn validate_llm_config(llm_config: &LlmConfig) -> Result<(), Y2mdError> {
-    if llm_config.model.trim().is_empty() {
-        return Err(Y2mdError::LlmConfig(
-            "LLM model name cannot be empty".to_string(),
-        ));
-    }
-
-    match llm_config.provider {
-        LlmProvider::OpenAI | LlmProvider::Anthropic => {
-            if llm_config.api_key.is_none() {
-                return Err(Y2mdError::LlmConfig(format!(
-                    "{} provider requires an API key",
-                    llm_config.provider
-                )));
-            }
-        }
-        LlmProvider::Custom => {
-            if llm_config.endpoint.is_none() {
-                return Err(Y2mdError::LlmConfig(
-                    "Custom provider requires an endpoint URL".to_string(),
-                ));
-            }
-        }
-        LlmProvider::Ollama | LlmProvider::LMStudio => {}
-    }
-
-    Ok(())
-}
-
-/// Apply LLM formatting using Ollama
-async fn format_with_ollama(transcript: &str, llm_config: &LlmConfig) -> Result<String, Y2mdError> {
-    let endpoint = llm_config
-        .endpoint
-        .as_deref()
-        .unwrap_or("http://localhost:11434");
-
-    // Check if Ollama service is available
+async fn format_with_local(
+    transcript: &str,
+    llm_config: &LocalLlmConfig,
+) -> Result<String, Y2mdError> {
     let client = reqwest::Client::new();
-    let health_check = client.get(format!("{}/api/tags", endpoint)).send().await;
+    
+    let health_check = client.get(format!("{}/api/tags", llm_config.endpoint)).send().await;
 
     if health_check.is_err() {
-        return Err(Y2mdError::LlmConfig(format!(
+        return Err(Y2mdError::Llm(format!(
             "Ollama service not available at {}. Make sure Ollama is running",
-            endpoint
+            llm_config.endpoint
         )));
     }
 
-    // Check if model is available
-    let model_check = client.get(format!("{}/api/tags", endpoint)).send().await;
-    if let Ok(response) = model_check {
-        if response.status().is_success() {
-            let models_json: serde_json::Value = response.json().await.map_err(|e| {
-                Y2mdError::LlmConfig(format!("Failed to parse Ollama models: {}", e))
-            })?;
-
-            let models = models_json["models"].as_array().ok_or_else(|| {
-                Y2mdError::LlmConfig(
-                    "Invalid response format from Ollama models endpoint".to_string(),
-                )
-            })?;
-
-            let model_exists = models.iter().any(|model| {
-                model["name"]
-                    .as_str()
-                    .map(|name| name.contains(&llm_config.model))
-                    .unwrap_or(false)
-            });
-
-            if !model_exists {
-                return Err(Y2mdError::LlmConfig(format!(
-                    "Model '{}' not found in Ollama. Available models: {}",
-                    llm_config.model,
-                    models
-                        .iter()
-                        .filter_map(|m| m["name"].as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )));
-            }
-        }
-    }
-
-    // Prepare the prompt for the LLM
     let prompt = format!(
         "Please format the following transcript into well-structured markdown. 
         Keep the original content but improve readability by:
@@ -1211,50 +1219,46 @@ async fn format_with_ollama(transcript: &str, llm_config: &LlmConfig) -> Result<
         transcript
     );
 
-    // Prepare the request payload
     let request_body = serde_json::json!({
         "model": llm_config.model,
         "prompt": prompt,
         "stream": false
     });
 
-    // Send request to Ollama with timeout
     let response = client
-        .post(format!("{}/api/generate", endpoint))
+        .post(format!("{}/api/generate", llm_config.endpoint))
         .json(&request_body)
-        .timeout(std::time::Duration::from_secs(120)) // 2 minute timeout
+        .timeout(std::time::Duration::from_secs(120))
         .send()
         .await
         .map_err(|e| {
             if e.is_timeout() {
-                Y2mdError::LlmConfig("LLM request timed out after 2 minutes".to_string())
+                Y2mdError::Llm("LLM request timed out after 2 minutes".to_string())
             } else {
-                Y2mdError::LlmConfig(format!("Failed to connect to Ollama: {}", e))
+                Y2mdError::Llm(format!("Failed to connect to Ollama: {}", e))
             }
         })?;
 
     if !response.status().is_success() {
-        return Err(Y2mdError::LlmConfig(format!(
+        return Err(Y2mdError::Llm(format!(
             "Ollama API returned error: {}",
             response.status()
         )));
     }
 
-    // Parse the response
     let response_json: serde_json::Value = response
         .json()
         .await
-        .map_err(|e| Y2mdError::LlmConfig(format!("Failed to parse Ollama response: {}", e)))?;
+        .map_err(|e| Y2mdError::Llm(format!("Failed to parse Ollama response: {}", e)))?;
 
-    // Extract the generated text
     let formatted_text = response_json["response"]
         .as_str()
-        .ok_or_else(|| Y2mdError::LlmConfig("Invalid response format from Ollama".to_string()))?
+        .ok_or_else(|| Y2mdError::Llm("Invalid response format from Ollama".to_string()))?
         .trim()
         .to_string();
 
     if formatted_text.is_empty() {
-        return Err(Y2mdError::LlmConfig(
+        return Err(Y2mdError::Llm(
             "Ollama returned empty response".to_string(),
         ));
     }
@@ -1262,16 +1266,13 @@ async fn format_with_ollama(transcript: &str, llm_config: &LlmConfig) -> Result<
     Ok(formatted_text)
 }
 
-/// Apply LLM formatting using OpenAI-compatible API
-async fn format_with_openai(transcript: &str, llm_config: &LlmConfig) -> Result<String, Y2mdError> {
-    let endpoint = llm_config
-        .endpoint
-        .as_deref()
-        .unwrap_or("https://api.openai.com/v1");
-
+async fn format_with_openai(
+    transcript: &str,
+    llm_config: &OpenAiConfig,
+    api_key: &str,
+) -> Result<String, Y2mdError> {
     let client = reqwest::Client::new();
 
-    // Prepare the prompt for the LLM
     let prompt = format!(
         "Please format the following transcript into well-structured markdown. 
         Keep the original content but improve readability by:
@@ -1284,7 +1285,6 @@ async fn format_with_openai(transcript: &str, llm_config: &LlmConfig) -> Result<
         transcript
     );
 
-    // Prepare the request payload
     let request_body = serde_json::json!({
         "model": llm_config.model,
         "messages": [
@@ -1300,46 +1300,41 @@ async fn format_with_openai(transcript: &str, llm_config: &LlmConfig) -> Result<
         "temperature": 0.1
     });
 
-    // Send request to OpenAI-compatible API with timeout
-    let mut request_builder = client
-        .post(format!("{}/chat/completions", endpoint))
+    let response = client
+        .post(format!("{}/chat/completions", llm_config.endpoint))
+        .header("Authorization", format!("Bearer {}", api_key))
         .json(&request_body)
-        .timeout(std::time::Duration::from_secs(120)); // 2 minute timeout
-
-    if let Some(api_key) = &llm_config.api_key {
-        request_builder = request_builder.header("Authorization", format!("Bearer {}", api_key));
-    }
-
-    let response = request_builder.send().await.map_err(|e| {
-        if e.is_timeout() {
-            Y2mdError::LlmConfig("LLM request timed out after 2 minutes".to_string())
-        } else {
-            Y2mdError::LlmConfig(format!("Failed to connect to OpenAI API: {}", e))
-        }
-    })?;
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(|e| {
+            if e.is_timeout() {
+                Y2mdError::Llm("LLM request timed out after 2 minutes".to_string())
+            } else {
+                Y2mdError::Llm(format!("Failed to connect to OpenAI API: {}", e))
+            }
+        })?;
 
     if !response.status().is_success() {
-        return Err(Y2mdError::LlmConfig(format!(
+        return Err(Y2mdError::Llm(format!(
             "OpenAI API returned error: {}",
             response.status()
         )));
     }
 
-    // Parse the response
     let response_json: serde_json::Value = response
         .json()
         .await
-        .map_err(|e| Y2mdError::LlmConfig(format!("Failed to parse OpenAI response: {}", e)))?;
+        .map_err(|e| Y2mdError::Llm(format!("Failed to parse OpenAI response: {}", e)))?;
 
-    // Extract the generated text
     let formatted_text = response_json["choices"][0]["message"]["content"]
         .as_str()
-        .ok_or_else(|| Y2mdError::LlmConfig("Invalid response format from OpenAI".to_string()))?
+        .ok_or_else(|| Y2mdError::Llm("Invalid response format from OpenAI".to_string()))?
         .trim()
         .to_string();
 
     if formatted_text.is_empty() {
-        return Err(Y2mdError::LlmConfig(
+        return Err(Y2mdError::Llm(
             "OpenAI returned empty response".to_string(),
         ));
     }
@@ -1347,23 +1342,11 @@ async fn format_with_openai(transcript: &str, llm_config: &LlmConfig) -> Result<
     Ok(formatted_text)
 }
 
-/// Apply LLM formatting using LM Studio
-async fn format_with_lmstudio(
-    transcript: &str,
-    llm_config: &LlmConfig,
-) -> Result<String, Y2mdError> {
-    format_with_openai(transcript, llm_config).await
-}
-
 async fn format_with_anthropic(
     transcript: &str,
-    llm_config: &LlmConfig,
+    llm_config: &AnthropicConfig,
+    api_key: &str,
 ) -> Result<String, Y2mdError> {
-    let endpoint = llm_config
-        .endpoint
-        .as_deref()
-        .unwrap_or("https://api.anthropic.com/v1");
-
     let client = reqwest::Client::new();
 
     let prompt = format!(
@@ -1389,28 +1372,26 @@ async fn format_with_anthropic(
         ]
     });
 
-    let mut request_builder = client
-        .post(format!("{}/messages", endpoint))
+    let response = client
+        .post(format!("{}/messages", llm_config.endpoint))
         .header("anthropic-version", "2023-06-01")
+        .header("x-api-key", api_key)
         .json(&request_body)
-        .timeout(std::time::Duration::from_secs(120));
-
-    if let Some(api_key) = &llm_config.api_key {
-        request_builder = request_builder.header("x-api-key", api_key);
-    }
-
-    let response = request_builder.send().await.map_err(|e| {
-        if e.is_timeout() {
-            Y2mdError::LlmConfig("LLM request timed out after 2 minutes".to_string())
-        } else {
-            Y2mdError::LlmConfig(format!("Failed to connect to Anthropic API: {}", e))
-        }
-    })?;
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(|e| {
+            if e.is_timeout() {
+                Y2mdError::Llm("LLM request timed out after 2 minutes".to_string())
+            } else {
+                Y2mdError::Llm(format!("Failed to connect to Anthropic API: {}", e))
+            }
+        })?;
 
     if !response.status().is_success() {
         let status = response.status();
         let error_text = response.text().await.unwrap_or_default();
-        return Err(Y2mdError::LlmConfig(format!(
+        return Err(Y2mdError::Llm(format!(
             "Anthropic API returned error {}: {}",
             status, error_text
         )));
@@ -1419,16 +1400,16 @@ async fn format_with_anthropic(
     let response_json: serde_json::Value = response
         .json()
         .await
-        .map_err(|e| Y2mdError::LlmConfig(format!("Failed to parse Anthropic response: {}", e)))?;
+        .map_err(|e| Y2mdError::Llm(format!("Failed to parse Anthropic response: {}", e)))?;
 
     let formatted_text = response_json["content"][0]["text"]
         .as_str()
-        .ok_or_else(|| Y2mdError::LlmConfig("Invalid response format from Anthropic".to_string()))?
+        .ok_or_else(|| Y2mdError::Llm("Invalid response format from Anthropic".to_string()))?
         .trim()
         .to_string();
 
     if formatted_text.is_empty() {
-        return Err(Y2mdError::LlmConfig(
+        return Err(Y2mdError::Llm(
             "Anthropic returned empty response".to_string(),
         ));
     }
@@ -1436,13 +1417,88 @@ async fn format_with_anthropic(
     Ok(formatted_text)
 }
 
-async fn format_with_custom(transcript: &str, llm_config: &LlmConfig) -> Result<String, Y2mdError> {
-    let _endpoint = llm_config
-        .endpoint
-        .as_ref()
-        .ok_or_else(|| Y2mdError::LlmConfig("Custom provider requires endpoint".to_string()))?;
+async fn format_with_custom(
+    transcript: &str,
+    llm_config: &CustomLlmConfig,
+    api_key: Option<&str>,
+) -> Result<String, Y2mdError> {
+    if llm_config.endpoint.is_empty() {
+        return Err(Y2mdError::Llm(
+            "Custom LLM endpoint not configured. Please set it in your config file.".to_string(),
+        ));
+    }
 
-    format_with_openai(transcript, llm_config).await
+    let client = reqwest::Client::new();
+
+    let prompt = format!(
+        "Please format the following transcript into well-structured markdown. 
+        Keep the original content but improve readability by:
+        - Organizing into logical paragraphs
+        - Fixing any grammar or punctuation issues
+        - Removing filler words if appropriate
+        - Maintaining the original meaning and tone
+        
+        Transcript:\n\n{}",
+        transcript
+    );
+
+    let request_body = serde_json::json!({
+        "model": llm_config.model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that formats transcripts into well-structured markdown."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.1
+    });
+
+    let mut request_builder = client
+        .post(format!("{}/chat/completions", llm_config.endpoint))
+        .json(&request_body)
+        .timeout(std::time::Duration::from_secs(120));
+
+    if let Some(key) = api_key {
+        request_builder = request_builder.header("Authorization", format!("Bearer {}", key));
+    }
+
+    let response = request_builder.send().await.map_err(|e| {
+        if e.is_timeout() {
+            Y2mdError::Llm("LLM request timed out after 2 minutes".to_string())
+        } else {
+            Y2mdError::Llm(format!("Failed to connect to custom LLM API: {}", e))
+        }
+    })?;
+
+    if !response.status().is_success() {
+        return Err(Y2mdError::Llm(format!(
+            "Custom LLM API returned error: {}",
+            response.status()
+        )));
+    }
+
+    let response_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| Y2mdError::Llm(format!("Failed to parse custom LLM response: {}", e)))?;
+
+    let formatted_text = response_json["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or_else(|| Y2mdError::Llm("Invalid response format from custom LLM".to_string()))?
+        .trim()
+        .to_string();
+
+    if formatted_text.is_empty() {
+        return Err(Y2mdError::Llm(
+            "Custom LLM returned empty response".to_string(),
+        ));
+    }
+
+    Ok(formatted_text)
 }
 
 /// Clean and normalize transcript text
@@ -1761,10 +1817,10 @@ impl OllamaManager {
             .get(format!("{}/api/tags", self.endpoint))
             .send()
             .await
-            .map_err(|e| Y2mdError::LlmConfig(format!("Failed to connect to Ollama: {}", e)))?;
+            .map_err(|e| Y2mdError::Llm(format!("Failed to connect to Ollama: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(Y2mdError::LlmConfig(
+            return Err(Y2mdError::Llm(
                 "Ollama service not available".to_string(),
             ));
         }
@@ -1772,10 +1828,10 @@ impl OllamaManager {
         let models_json: serde_json::Value = response
             .json()
             .await
-            .map_err(|e| Y2mdError::LlmConfig(format!("Failed to parse Ollama models: {}", e)))?;
+            .map_err(|e| Y2mdError::Llm(format!("Failed to parse Ollama models: {}", e)))?;
 
         let models = models_json["models"].as_array().ok_or_else(|| {
-            Y2mdError::LlmConfig("Invalid response format from Ollama".to_string())
+            Y2mdError::Llm("Invalid response format from Ollama".to_string())
         })?;
 
         let model_names: Vec<String> = models
@@ -1817,11 +1873,10 @@ impl OllamaManager {
         })
     }
 
-    /// Download a model with progress indication
+    /// Download a model
     pub async fn download_model(
         &self,
         model_name: &str,
-        progress_callback: Option<Box<dyn Fn(String, u64, u64) + Send + Sync>>,
     ) -> Result<(), Y2mdError> {
         let response = self
             .client
@@ -1832,19 +1887,15 @@ impl OllamaManager {
             }))
             .send()
             .await
-            .map_err(|e| Y2mdError::LlmConfig(format!("Failed to start model download: {}", e)))?;
+            .map_err(|e| Y2mdError::Llm(format!("Failed to start model download: {}", e)))?;
 
         if !response.status().is_success() {
             let status_code = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(Y2mdError::LlmConfig(format!(
+            return Err(Y2mdError::Llm(format!(
                 "Failed to download model: {} - {}",
                 status_code, error_text
             )));
-        }
-
-        if let Some(callback) = &progress_callback {
-            callback("Starting download...".to_string(), 0, 0);
         }
 
         // Stream the response line by line
@@ -1852,7 +1903,7 @@ impl OllamaManager {
 
         // Read the response as text and process line by line
         let response_text = response.text().await.map_err(|e| {
-            Y2mdError::LlmConfig(format!("Failed to read download response: {}", e))
+            Y2mdError::Llm(format!("Failed to read download response: {}", e))
         })?;
 
         for line in response_text.lines() {
@@ -1863,10 +1914,6 @@ impl OllamaManager {
 
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
                 if let Some(status) = json["status"].as_str() {
-                    if let Some(callback) = &progress_callback {
-                        callback(status.to_string(), 0, 0);
-                    }
-
                     // Check for completion indicators
                     if status == "success" || status.contains("complete") || status.contains("done")
                     {
@@ -1879,10 +1926,6 @@ impl OllamaManager {
         // If we didn't get a clear completion signal, wait a bit and check
         if !download_completed {
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-        }
-
-        if let Some(callback) = &progress_callback {
-            callback("Download complete".to_string(), 100, 100);
         }
 
         // Verify the model was actually downloaded
@@ -1899,7 +1942,7 @@ impl OllamaManager {
         let final_available = self.is_model_available(model_name).await?;
 
         if !final_available {
-            return Err(Y2mdError::LlmConfig(format!(
+            return Err(Y2mdError::Llm(format!(
                 "Model '{}' was not installed after download. Please check if the model name is correct and try again.",
                 model_name
             )));
@@ -1922,10 +1965,10 @@ impl OllamaManager {
             }))
             .send()
             .await
-            .map_err(|e| Y2mdError::LlmConfig(format!("Failed to remove model: {}", e)))?;
+            .map_err(|e| Y2mdError::Llm(format!("Failed to remove model: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(Y2mdError::LlmConfig(format!(
+            return Err(Y2mdError::Llm(format!(
                 "Failed to remove model: {}",
                 response.status()
             )));
@@ -1965,405 +2008,5 @@ impl ModelInfo {
                 format!("{} bytes", bytes)
             }
         })
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderConfig {
-    pub name: String,
-    pub provider_type: LlmProvider,
-    pub model: String,
-    pub endpoint: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OAuthToken {
-    pub access_token: String,
-    pub refresh_token: Option<String>,
-    pub expires_at: Option<u64>,
-    pub token_type: String,
-}
-
-impl OAuthToken {
-    pub fn is_expired(&self) -> bool {
-        if let Some(expires_at) = self.expires_at {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            now >= expires_at
-        } else {
-            false
-        }
-    }
-
-    pub fn needs_refresh(&self) -> bool {
-        if let Some(expires_at) = self.expires_at {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            now >= expires_at - 300
-        } else {
-            false
-        }
-    }
-}
-
-pub struct CredentialManager {
-    service_name: String,
-}
-
-impl CredentialManager {
-    pub fn new() -> Self {
-        Self {
-            service_name: "y2md".to_string(),
-        }
-    }
-
-    pub fn get_api_key(&self, provider_name: &str) -> Result<Option<String>, Y2mdError> {
-        let env_var_name = format!("Y2MD_{}_API_KEY", provider_name.to_uppercase());
-        if let Ok(key) = std::env::var(&env_var_name) {
-            return Ok(Some(key));
-        }
-
-        let entry = keyring::Entry::new(&self.service_name, provider_name)
-            .map_err(|e| Y2mdError::Config(format!("Failed to access keyring: {}", e)))?;
-
-        match entry.get_password() {
-            Ok(password) => Ok(Some(password)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(Y2mdError::Config(format!(
-                "Failed to retrieve API key from keyring: {}",
-                e
-            ))),
-        }
-    }
-
-    pub fn set_api_key(&self, provider_name: &str, api_key: &str) -> Result<(), Y2mdError> {
-        let entry = keyring::Entry::new(&self.service_name, provider_name)
-            .map_err(|e| Y2mdError::Config(format!("Failed to access keyring: {}", e)))?;
-
-        entry
-            .set_password(api_key)
-            .map_err(|e| Y2mdError::Config(format!("Failed to store API key in keyring: {}", e)))?;
-
-        Ok(())
-    }
-
-    pub fn delete_api_key(&self, provider_name: &str) -> Result<(), Y2mdError> {
-        let entry = keyring::Entry::new(&self.service_name, provider_name)
-            .map_err(|e| Y2mdError::Config(format!("Failed to access keyring: {}", e)))?;
-
-        match entry.delete_password() {
-            Ok(()) => Ok(()),
-            Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(Y2mdError::Config(format!(
-                "Failed to delete API key from keyring: {}",
-                e
-            ))),
-        }
-    }
-
-    pub fn has_api_key(&self, provider_name: &str) -> bool {
-        self.get_api_key(provider_name).ok().flatten().is_some()
-    }
-
-    pub fn get_oauth_token(&self, provider_name: &str) -> Result<Option<OAuthToken>, Y2mdError> {
-        let token_key = format!("{}_oauth_token", provider_name);
-        let entry = keyring::Entry::new(&self.service_name, &token_key)
-            .map_err(|e| Y2mdError::Config(format!("Failed to access keyring: {}", e)))?;
-
-        match entry.get_password() {
-            Ok(token_json) => {
-                let token: OAuthToken = serde_json::from_str(&token_json).map_err(|e| {
-                    Y2mdError::Config(format!("Failed to parse OAuth token: {}", e))
-                })?;
-                Ok(Some(token))
-            }
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(Y2mdError::Config(format!(
-                "Failed to retrieve OAuth token from keyring: {}",
-                e
-            ))),
-        }
-    }
-
-    pub fn set_oauth_token(
-        &self,
-        provider_name: &str,
-        token: &OAuthToken,
-    ) -> Result<(), Y2mdError> {
-        let token_key = format!("{}_oauth_token", provider_name);
-        let entry = keyring::Entry::new(&self.service_name, &token_key)
-            .map_err(|e| Y2mdError::Config(format!("Failed to access keyring: {}", e)))?;
-
-        let token_json = serde_json::to_string(token)
-            .map_err(|e| Y2mdError::Config(format!("Failed to serialize OAuth token: {}", e)))?;
-
-        entry.set_password(&token_json).map_err(|e| {
-            Y2mdError::Config(format!("Failed to store OAuth token in keyring: {}", e))
-        })?;
-
-        Ok(())
-    }
-
-    pub fn delete_oauth_token(&self, provider_name: &str) -> Result<(), Y2mdError> {
-        let token_key = format!("{}_oauth_token", provider_name);
-        let entry = keyring::Entry::new(&self.service_name, &token_key)
-            .map_err(|e| Y2mdError::Config(format!("Failed to access keyring: {}", e)))?;
-
-        match entry.delete_password() {
-            Ok(()) => Ok(()),
-            Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(Y2mdError::Config(format!(
-                "Failed to delete OAuth token from keyring: {}",
-                e
-            ))),
-        }
-    }
-
-    pub fn has_oauth_token(&self, provider_name: &str) -> bool {
-        self.get_oauth_token(provider_name).ok().flatten().is_some()
-    }
-
-    pub async fn get_valid_token(
-        &self,
-        provider_name: &str,
-        provider_type: &LlmProvider,
-    ) -> Result<Option<String>, Y2mdError> {
-        if let Some(mut token) = self.get_oauth_token(provider_name)? {
-            if token.needs_refresh() && token.refresh_token.is_some() {
-                token = self
-                    .refresh_oauth_token(provider_name, provider_type, &token)
-                    .await?;
-                self.set_oauth_token(provider_name, &token)?;
-            }
-
-            if !token.is_expired() {
-                return Ok(Some(token.access_token));
-            }
-        }
-
-        self.get_api_key(provider_name)
-    }
-
-    async fn refresh_oauth_token(
-        &self,
-        _provider_name: &str,
-        provider_type: &LlmProvider,
-        token: &OAuthToken,
-    ) -> Result<OAuthToken, Y2mdError> {
-        let refresh_token = token
-            .refresh_token
-            .as_ref()
-            .ok_or_else(|| Y2mdError::Config("No refresh token available".to_string()))?;
-
-        match provider_type {
-            LlmProvider::OpenAI => self.refresh_openai_token(refresh_token).await,
-            LlmProvider::Anthropic => self.refresh_anthropic_token(refresh_token).await,
-            _ => Err(Y2mdError::Config(format!(
-                "OAuth not supported for provider type: {}",
-                provider_type
-            ))),
-        }
-    }
-
-    async fn refresh_openai_token(&self, _refresh_token: &str) -> Result<OAuthToken, Y2mdError> {
-        Err(Y2mdError::Config(
-            "OpenAI OAuth refresh not yet implemented".to_string(),
-        ))
-    }
-
-    async fn refresh_anthropic_token(&self, _refresh_token: &str) -> Result<OAuthToken, Y2mdError> {
-        Err(Y2mdError::Config(
-            "Anthropic OAuth refresh not yet implemented".to_string(),
-        ))
-    }
-}
-
-pub struct OAuthManager {
-    client: reqwest::Client,
-}
-
-impl OAuthManager {
-    pub fn new() -> Self {
-        Self {
-            client: reqwest::Client::new(),
-        }
-    }
-
-    pub async fn device_code_flow(
-        &self,
-        provider_type: &LlmProvider,
-        client_id: &str,
-    ) -> Result<OAuthToken, Y2mdError> {
-        match provider_type {
-            LlmProvider::OpenAI => self.openai_device_code_flow(client_id).await,
-            LlmProvider::Anthropic => self.anthropic_device_code_flow(client_id).await,
-            _ => Err(Y2mdError::Config(format!(
-                "OAuth not supported for provider type: {}",
-                provider_type
-            ))),
-        }
-    }
-
-    async fn openai_device_code_flow(&self, client_id: &str) -> Result<OAuthToken, Y2mdError> {
-        println!("🔐 Starting OpenAI OAuth authentication...\n");
-
-        let device_code_response = self
-            .client
-            .post("https://auth0.openai.com/oauth/device/code")
-            .json(&serde_json::json!({
-                "client_id": client_id,
-                "scope": "openid profile email offline_access",
-                "audience": "https://api.openai.com/v1"
-            }))
-            .send()
-            .await
-            .map_err(|e| {
-                Y2mdError::Config(format!("Failed to initiate device code flow: {}", e))
-            })?;
-
-        if !device_code_response.status().is_success() {
-            let error_text = device_code_response.text().await.unwrap_or_default();
-            return Err(Y2mdError::Config(format!(
-                "Failed to get device code: {}",
-                error_text
-            )));
-        }
-
-        let device_code_json: serde_json::Value =
-            device_code_response.json().await.map_err(|e| {
-                Y2mdError::Config(format!("Failed to parse device code response: {}", e))
-            })?;
-
-        let user_code = device_code_json["user_code"]
-            .as_str()
-            .ok_or_else(|| Y2mdError::Config("Missing user_code in response".to_string()))?;
-        let verification_uri = device_code_json["verification_uri"]
-            .as_str()
-            .ok_or_else(|| Y2mdError::Config("Missing verification_uri in response".to_string()))?;
-        let device_code = device_code_json["device_code"]
-            .as_str()
-            .ok_or_else(|| Y2mdError::Config("Missing device_code in response".to_string()))?;
-        let interval = device_code_json["interval"].as_u64().unwrap_or(5);
-
-        println!("Please visit: {}", verification_uri);
-        println!("And enter code: {}\n", user_code);
-        println!("Waiting for authentication...");
-
-        self.poll_for_token(
-            "https://auth0.openai.com/oauth/token",
-            client_id,
-            device_code,
-            interval,
-        )
-        .await
-    }
-
-    async fn anthropic_device_code_flow(&self, _client_id: &str) -> Result<OAuthToken, Y2mdError> {
-        Err(Y2mdError::Config(
-            "Anthropic OAuth device code flow not yet implemented. Please use API key authentication.".to_string()
-        ))
-    }
-
-    async fn poll_for_token(
-        &self,
-        token_url: &str,
-        client_id: &str,
-        device_code: &str,
-        interval: u64,
-    ) -> Result<OAuthToken, Y2mdError> {
-        let mut attempts = 0;
-        let max_attempts = 120;
-
-        loop {
-            if attempts >= max_attempts {
-                return Err(Y2mdError::Config("Authentication timeout".to_string()));
-            }
-
-            tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
-
-            let response = self
-                .client
-                .post(token_url)
-                .json(&serde_json::json!({
-                    "client_id": client_id,
-                    "device_code": device_code,
-                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
-                }))
-                .send()
-                .await
-                .map_err(|e| Y2mdError::Config(format!("Failed to poll for token: {}", e)))?;
-
-            if response.status().is_success() {
-                let token_json: serde_json::Value = response.json().await.map_err(|e| {
-                    Y2mdError::Config(format!("Failed to parse token response: {}", e))
-                })?;
-
-                let access_token = token_json["access_token"]
-                    .as_str()
-                    .ok_or_else(|| {
-                        Y2mdError::Config("Missing access_token in response".to_string())
-                    })?
-                    .to_string();
-
-                let refresh_token = token_json["refresh_token"].as_str().map(|s| s.to_string());
-
-                let expires_in = token_json["expires_in"].as_u64();
-                let expires_at = expires_in.map(|secs| {
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs()
-                        + secs
-                });
-
-                let token_type = token_json["token_type"]
-                    .as_str()
-                    .unwrap_or("Bearer")
-                    .to_string();
-
-                println!("✅ Authentication successful!\n");
-
-                return Ok(OAuthToken {
-                    access_token,
-                    refresh_token,
-                    expires_at,
-                    token_type,
-                });
-            }
-
-            let error_json: serde_json::Value = response
-                .json()
-                .await
-                .map_err(|e| Y2mdError::Config(format!("Failed to parse error response: {}", e)))?;
-
-            let error = error_json["error"].as_str().unwrap_or("unknown_error");
-
-            match error {
-                "authorization_pending" => {
-                    attempts += 1;
-                    continue;
-                }
-                "slow_down" => {
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    attempts += 1;
-                    continue;
-                }
-                "expired_token" => {
-                    return Err(Y2mdError::Config(
-                        "Device code expired. Please try again.".to_string(),
-                    ));
-                }
-                "access_denied" => {
-                    return Err(Y2mdError::Config("Access denied by user".to_string()));
-                }
-                _ => {
-                    return Err(Y2mdError::Config(format!("OAuth error: {}", error)));
-                }
-            }
-        }
     }
 }

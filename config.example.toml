@@ -1,0 +1,60 @@
+# =============================================================================
+# Y2MD Configuration Example
+# Copy to ~/.config/y2md/config.toml and customize
+# Or let y2md create defaults with: y2md config reset
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Basic Settings
+# -----------------------------------------------------------------------------
+output_dir = "."                    # Where to save transcripts
+default_language = "en"             # Default language code
+prefer_captions = true              # Try captions before speech-to-text
+
+# -----------------------------------------------------------------------------
+# Formatting Options
+# -----------------------------------------------------------------------------
+timestamps = false                  # Include timestamps in output
+compact = false                     # Use compact formatting
+paragraph_length = 4                # Sentences per paragraph
+
+# -----------------------------------------------------------------------------
+# LLM Configuration
+# To use LLM formatting: y2md <URL> --llm
+# Or enable by default: set enabled = true
+# -----------------------------------------------------------------------------
+[llm]
+enabled = false                     # Use LLM formatting by default
+provider = "local"                  # Default provider: local, openai, anthropic, custom
+
+# Local LLM (Ollama)
+# No API key needed - just make sure Ollama is running
+[llm.local]
+endpoint = "http://localhost:11434"
+model = "mistral-nemo:12b-instruct-2407-q5_0"
+
+# OpenAI
+# Set API key with: y2md llm set-key openai
+[llm.openai]
+endpoint = "https://api.openai.com/v1"
+model = "gpt-4-turbo-preview"
+
+# Anthropic Claude
+# Set API key with: y2md llm set-key anthropic
+[llm.anthropic]
+endpoint = "https://api.anthropic.com/v1"
+model = "claude-3-sonnet-20240229"
+
+# Custom OpenAI-compatible API (Groq, Together AI, etc.)
+# Set API key with: y2md llm set-key custom
+[llm.custom]
+endpoint = ""                       # Your API endpoint
+model = ""                          # Model name
+
+# -----------------------------------------------------------------------------
+# Advanced Settings
+# -----------------------------------------------------------------------------
+[advanced]
+whisper_model = "base"              # Whisper model for speech-to-text
+whisper_threads = 4                 # CPU threads for STT
+cache_audio = true                  # Cache downloaded audio files

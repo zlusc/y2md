@@ -41,80 +41,51 @@
 
 ## Configuration System
 - **Configuration File**: `~/.config/y2md/config.toml`
-- **Configuration Commands**: `y2md config` subcommands for management
-- **LLM Providers**: Ollama (default), OpenAI, LM Studio
-- **Configuration Overrides**: CLI arguments override config file settings
+- **Configuration Commands**: 
+  - `y2md config show` - Display current configuration
+  - `y2md config edit` - Open config in default editor
+  - `y2md config path` - Show config file path
+  - `y2md config reset` - Reset to default configuration
+- **LLM Providers**: Local (Ollama), OpenAI, Anthropic, Custom (OpenAI-compatible)
+- **Direct Configuration**: Edit config.toml directly for all settings
 
 ## LLM Integration
-- **Multiple Providers**: Ollama (local), OpenAI, Anthropic Claude, LM Studio, Custom (OpenAI-compatible)
-- **Provider Management**: `y2md provider` commands for managing multiple provider configurations
-- **Configurable Models**: Set via `y2md config set-llm-model` or per-provider configuration
-- **Endpoint Configuration**: Customizable API endpoints for all providers
-- **Secure Credential Storage**: API keys stored in system keychain (not config files)
-- **API Key Support**: Secure storage via system keychain with environment variable fallback
-- **Model Validation**: Checks model availability before use (Ollama)
+- **Multiple Providers**: Local (Ollama), OpenAI, Anthropic Claude, Custom (OpenAI-compatible)
+- **Simple Provider Selection**: Use `--llm [provider]` flag or set default in config
+- **Provider Configuration**: Configure all providers in config.toml under `[llm.local]`, `[llm.openai]`, etc.
+- **API Key Management**: Set via `y2md llm set-key <provider>` or environment variables
+- **Environment Variables**: Support for `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
+- **Model Validation**: Checks model availability before use (Local/Ollama only)
 - **Timeout Handling**: 2-minute timeout with graceful fallback
 - **Fallback System**: Automatic fallback to standard formatting if LLM fails
 
-## Model Management System
-- **Automatic Downloads**: `set-llm-model` automatically downloads missing models
-- **Interactive Confirmation**: Asks for confirmation before downloading large models
+## LLM Management Commands
+- **List Models**: `y2md llm list` - List available local models (Ollama)
+- **Pull Models**: `y2md llm pull <model>` - Download a model (Ollama)
+- **Remove Models**: `y2md llm remove <model>` - Remove a model (Ollama)
+- **Test Provider**: `y2md llm test [provider]` - Test LLM provider connection
+- **Set API Key**: `y2md llm set-key <provider>` - Set API key for a provider
 - **Progress Indicators**: Shows download progress with spinner
-- **Model Cache**: Caches local model list for 30 seconds
-- **Management Commands**: `y2md model` subcommands for full control
-- **Ollama Integration**: Uses Ollama API for model operations
 - **Error Recovery**: Clear error messages with actionable suggestions
 
-## Provider Management System
-- **Multi-Provider Support**: Configure and manage multiple LLM providers simultaneously
-- **Provider Commands**: `y2md provider` subcommands for complete provider lifecycle
-  - `y2md provider list` - List all configured providers
-  - `y2md provider add` - Add a new provider configuration
-  - `y2md provider remove` - Remove a provider
-  - `y2md provider set-active` - Switch between providers
-  - `y2md provider show` - View provider details
-  - `y2md provider set-api-key` - Securely store API key in system keychain
-  - `y2md provider remove-api-key` - Remove stored API key
-  - `y2md provider test` - Test provider connection
-- **Credential Security**: API keys stored in system keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service)
-- **Environment Variables**: Support for `Y2MD_<PROVIDER>_API_KEY` environment variables
-- **Active Provider**: Set one provider as active for LLM formatting operations
-- **Provider Types**: ollama, openai, anthropic, lmstudio, custom (OpenAI-compatible)
-
-## OAuth2 Authentication System
-- **Device Code Flow**: User-friendly CLI authentication for OpenAI and Anthropic
-- **Auth Commands**: `y2md auth` subcommands for authentication management
-  - `y2md auth login <provider>` - Login to a provider using OAuth
-  - `y2md auth logout <provider>` - Logout and remove OAuth tokens
-  - `y2md auth status [provider]` - Show authentication status for providers
-- **Token Management**: Automatic token refresh before expiration
-- **Secure Storage**: OAuth tokens stored in system keychain with encryption
-- **Fallback**: Automatic fallback to API key authentication if OAuth not available
-- **Token Validation**: Checks token expiration and automatically refreshes when needed
-- **Multiple Auth Methods**: Support both OAuth and API key authentication per provider
-
 ## Supported LLM Providers
-1. **Ollama** (Local)
+1. **Local** (Ollama)
    - Default provider for local LLM execution
    - No API key required
-   - Model management via `y2md model` commands
+   - Model management via `y2md llm` commands
+   - Configure endpoint and model in `[llm.local]`
    
 2. **OpenAI**
    - Supports GPT-4, GPT-3.5-turbo, etc.
-   - Requires API key (stored in system keychain)
-   - Custom endpoint support
+   - Requires API key (set via `y2md llm set-key openai` or `OPENAI_API_KEY`)
+   - Configure endpoint and model in `[llm.openai]`
    
-3. **Anthropic Claude**
+3. **Anthropic**
    - Supports Claude 3 models (Opus, Sonnet, Haiku)
-   - Requires API key (stored in system keychain)
-   - Uses Anthropic Messages API
+   - Requires API key (set via `y2md llm set-key anthropic` or `ANTHROPIC_API_KEY`)
+   - Configure endpoint and model in `[llm.anthropic]`
    
-4. **LM Studio** (Local)
-   - OpenAI-compatible local server
-   - No API key required
-   - Custom endpoint configuration
-   
-5. **Custom (OpenAI-compatible)**
-   - For any OpenAI-compatible API (Groq, Together AI, etc.)
-   - Requires custom endpoint URL
+4. **Custom** (OpenAI-compatible)
+   - For any OpenAI-compatible API (Groq, Together AI, LM Studio, etc.)
    - Optional API key support
+   - Configure endpoint and model in `[llm.custom]`

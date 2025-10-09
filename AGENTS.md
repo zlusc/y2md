@@ -58,6 +58,7 @@
 - **Model Validation**: Checks model availability before use (Local/Ollama only)
 - **Timeout Handling**: 2-minute timeout with graceful fallback
 - **Fallback System**: Automatic fallback to standard formatting if LLM fails
+- **Metadata Tracking**: Records which provider and model formatted each transcript in the output YAML front matter
 
 ## LLM Management Commands
 - **List Models**: `y2md llm list` - List available local models (Ollama)
@@ -89,3 +90,22 @@
    - For any OpenAI-compatible API (Groq, Together AI, LM Studio, etc.)
    - Optional API key support
    - Configure endpoint and model in `[llm.custom]`
+## Output Metadata
+All generated markdown files include comprehensive YAML front matter:
+- **title**: Video title
+- **channel**: Channel/creator name
+- **url**: Original YouTube URL
+- **video_id**: YouTube video ID
+- **duration**: Video length (HH:MM:SS)
+- **source**: Transcript source (`captions` or `whisper`)
+- **language**: Transcript language code
+- **extracted_at**: ISO 8601 timestamp of extraction
+- **formatted_by**: Formatting method (`llm` or `standard`)
+- **llm_provider**: LLM provider used (only when `formatted_by: "llm"`)
+- **llm_model**: Specific model name (only when `formatted_by: "llm"`)
+
+This metadata enables:
+- Reproducibility of results
+- Auditing of processing quality across providers
+- Organization of transcripts by processing method
+- Tracking of which tools and models were used for each transcript

@@ -61,7 +61,7 @@ impl std::fmt::Display for LlmProviderType {
 
 impl std::str::FromStr for LlmProviderType {
     type Err = String;
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "local" => Ok(LlmProviderType::Local),
@@ -214,8 +214,13 @@ impl AppConfig {
         let config_content = std::fs::read_to_string(&config_path)
             .map_err(|e| Y2mdError::Config(format!("Failed to read config file: {}", e)))?;
 
-        toml::from_str::<AppConfig>(&config_content)
-            .map_err(|e| Y2mdError::Config(format!("Failed to parse config: {}\n\nPlease check your config file at: {}", e, config_path.display())))
+        toml::from_str::<AppConfig>(&config_content).map_err(|e| {
+            Y2mdError::Config(format!(
+                "Failed to parse config: {}\n\nPlease check your config file at: {}",
+                e,
+                config_path.display()
+            ))
+        })
     }
 
     pub fn save(&self) -> Result<(), Y2mdError> {
@@ -226,14 +231,14 @@ impl AppConfig {
             .map_err(|e| Y2mdError::Config(format!("Failed to create config directory: {}", e)))?;
 
         let config_path = config_dir.config_dir().join("config.toml");
-        
+
         let header = r#"# =============================================================================
 # Y2MD Configuration
 # Edit this file directly or use: y2md config edit
 # =============================================================================
 
 "#;
-        
+
         let config_toml = toml::to_string_pretty(self)
             .map_err(|e| Y2mdError::Config(format!("Failed to serialize configuration: {}", e)))?;
 
@@ -262,10 +267,13 @@ impl CredentialManager {
         }
     }
 
-    pub fn get_api_key(&self, provider_type: &LlmProviderType) -> Result<Option<String>, Y2mdError> {
+    pub fn get_api_key(
+        &self,
+        provider_type: &LlmProviderType,
+    ) -> Result<Option<String>, Y2mdError> {
         let provider_name = provider_type.to_string();
         let env_var_name = format!("Y2MD_{}_API_KEY", provider_name.to_uppercase());
-        
+
         if let Ok(key) = std::env::var(&env_var_name) {
             return Ok(Some(key));
         }
@@ -283,7 +291,11 @@ impl CredentialManager {
         }
     }
 
-    pub fn set_api_key(&self, provider_type: &LlmProviderType, api_key: &str) -> Result<(), Y2mdError> {
+    pub fn set_api_key(
+        &self,
+        provider_type: &LlmProviderType,
+        api_key: &str,
+    ) -> Result<(), Y2mdError> {
         let provider_name = provider_type.to_string();
         let entry = keyring::Entry::new(&self.service_name, &provider_name)
             .map_err(|e| Y2mdError::Config(format!("Failed to access keyring: {}", e)))?;
@@ -919,6 +931,13 @@ pub async fn format_markdown(
 ) -> String {
     let mut markdown = String::new();
 
+    let config = AppConfig::load().ok();
+
+    // Track formatting method and LLM details
+    let mut formatted_by = "standard";
+    let mut actual_llm_provider: Option<String> = None;
+    let mut actual_llm_model: Option<String> = None;
+
     // Add YAML front matter
     markdown.push_str("---\n");
     markdown.push_str(&format!(
@@ -939,7 +958,6 @@ pub async fn format_markdown(
         "extracted_at: \"{}\"\n",
         chrono::Utc::now().to_rfc3339()
     ));
-    markdown.push_str("---\n\n");
 
     // Add title
     markdown.push_str(&format!("# {}\n\n", escape_markdown(&metadata.title)));
@@ -953,9 +971,30 @@ pub async fn format_markdown(
     // Use enhanced formatting for better readability
     let formatted_transcript = if use_llm {
         println!("Using LLM for enhanced formatting...");
-        match format_with_llm(transcript, llm_provider).await {
+
+        let provider = if let Some(ref p) = llm_provider {
+            p.clone()
+        } else if let Some(ref cfg) = config {
+            cfg.llm.provider.clone()
+        } else {
+            LlmProviderType::Local
+        };
+
+        match format_with_llm(transcript, Some(provider.clone())).await {
             Ok(llm_formatted) => {
                 println!("LLM formatting completed successfully");
+                formatted_by = "llm";
+                actual_llm_provider = Some(provider.to_string());
+
+                if let Some(ref cfg) = config {
+                    actual_llm_model = Some(match provider {
+                        LlmProviderType::Local => cfg.llm.local.model.clone(),
+                        LlmProviderType::OpenAI => cfg.llm.openai.model.clone(),
+                        LlmProviderType::Anthropic => cfg.llm.anthropic.model.clone(),
+                        LlmProviderType::Custom => cfg.llm.custom.model.clone(),
+                    });
+                }
+
                 llm_formatted
             }
             Err(e) => {
@@ -970,6 +1009,30 @@ pub async fn format_markdown(
     } else {
         format_transcript(transcript, compact, paragraph_length)
     };
+
+    // Now add formatting metadata after we know the results
+    let mut front_matter_addition = String::new();
+    front_matter_addition.push_str(&format!("formatted_by: \"{}\"\n", formatted_by));
+    if let Some(provider) = actual_llm_provider {
+        front_matter_addition.push_str(&format!("llm_provider: \"{}\"\n", provider));
+    }
+    if let Some(model) = actual_llm_model {
+        front_matter_addition.push_str(&format!("llm_model: \"{}\"\n", model));
+    }
+    front_matter_addition.push_str("---\n\n");
+
+    // Insert the formatting metadata before the closing --- of front matter
+    // Find the position of the first --- closing marker
+    if let Some(pos) = markdown.find("---\n\n# ") {
+        markdown.insert_str(pos, &front_matter_addition);
+        // Remove the duplicate --- that we just added
+        let new_content = markdown.replace(
+            &format!("{}---\n\n", front_matter_addition),
+            &front_matter_addition,
+        );
+        markdown = new_content;
+    }
+
     markdown.push_str(&formatted_transcript);
 
     markdown
@@ -1163,24 +1226,35 @@ pub fn format_transcript(transcript: &str, compact: bool, paragraph_length: usiz
     format_paragraphs(&cleaned, paragraph_length)
 }
 
-pub async fn format_with_llm(transcript: &str, provider_override: Option<LlmProviderType>) -> Result<String, Y2mdError> {
+pub async fn format_with_llm(
+    transcript: &str,
+    provider_override: Option<LlmProviderType>,
+) -> Result<String, Y2mdError> {
     let config = AppConfig::load()?;
     let cred_manager = CredentialManager::new();
 
     let provider = provider_override.unwrap_or(config.llm.provider.clone());
 
     match provider {
-        LlmProviderType::Local => {
-            format_with_local(transcript, &config.llm.local).await
-        }
+        LlmProviderType::Local => format_with_local(transcript, &config.llm.local).await,
         LlmProviderType::OpenAI => {
-            let api_key = cred_manager.get_api_key(&LlmProviderType::OpenAI)?
-                .ok_or_else(|| Y2mdError::Llm("OpenAI API key not set. Use: y2md llm set-key openai".to_string()))?;
+            let api_key = cred_manager
+                .get_api_key(&LlmProviderType::OpenAI)?
+                .ok_or_else(|| {
+                    Y2mdError::Llm(
+                        "OpenAI API key not set. Use: y2md llm set-key openai".to_string(),
+                    )
+                })?;
             format_with_openai(transcript, &config.llm.openai, &api_key).await
         }
         LlmProviderType::Anthropic => {
-            let api_key = cred_manager.get_api_key(&LlmProviderType::Anthropic)?
-                .ok_or_else(|| Y2mdError::Llm("Anthropic API key not set. Use: y2md llm set-key anthropic".to_string()))?;
+            let api_key = cred_manager
+                .get_api_key(&LlmProviderType::Anthropic)?
+                .ok_or_else(|| {
+                    Y2mdError::Llm(
+                        "Anthropic API key not set. Use: y2md llm set-key anthropic".to_string(),
+                    )
+                })?;
             format_with_anthropic(transcript, &config.llm.anthropic, &api_key).await
         }
         LlmProviderType::Custom => {
@@ -1195,8 +1269,11 @@ async fn format_with_local(
     llm_config: &LocalLlmConfig,
 ) -> Result<String, Y2mdError> {
     let client = reqwest::Client::new();
-    
-    let health_check = client.get(format!("{}/api/tags", llm_config.endpoint)).send().await;
+
+    let health_check = client
+        .get(format!("{}/api/tags", llm_config.endpoint))
+        .send()
+        .await;
 
     if health_check.is_err() {
         return Err(Y2mdError::Llm(format!(
@@ -1258,9 +1335,7 @@ async fn format_with_local(
         .to_string();
 
     if formatted_text.is_empty() {
-        return Err(Y2mdError::Llm(
-            "Ollama returned empty response".to_string(),
-        ));
+        return Err(Y2mdError::Llm("Ollama returned empty response".to_string()));
     }
 
     Ok(formatted_text)
@@ -1334,9 +1409,7 @@ async fn format_with_openai(
         .to_string();
 
     if formatted_text.is_empty() {
-        return Err(Y2mdError::Llm(
-            "OpenAI returned empty response".to_string(),
-        ));
+        return Err(Y2mdError::Llm("OpenAI returned empty response".to_string()));
     }
 
     Ok(formatted_text)
@@ -1820,9 +1893,7 @@ impl OllamaManager {
             .map_err(|e| Y2mdError::Llm(format!("Failed to connect to Ollama: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(Y2mdError::Llm(
-                "Ollama service not available".to_string(),
-            ));
+            return Err(Y2mdError::Llm("Ollama service not available".to_string()));
         }
 
         let models_json: serde_json::Value = response
@@ -1830,9 +1901,9 @@ impl OllamaManager {
             .await
             .map_err(|e| Y2mdError::Llm(format!("Failed to parse Ollama models: {}", e)))?;
 
-        let models = models_json["models"].as_array().ok_or_else(|| {
-            Y2mdError::Llm("Invalid response format from Ollama".to_string())
-        })?;
+        let models = models_json["models"]
+            .as_array()
+            .ok_or_else(|| Y2mdError::Llm("Invalid response format from Ollama".to_string()))?;
 
         let model_names: Vec<String> = models
             .iter()
@@ -1874,10 +1945,7 @@ impl OllamaManager {
     }
 
     /// Download a model
-    pub async fn download_model(
-        &self,
-        model_name: &str,
-    ) -> Result<(), Y2mdError> {
+    pub async fn download_model(&self, model_name: &str) -> Result<(), Y2mdError> {
         let response = self
             .client
             .post(format!("{}/api/pull", self.endpoint))
@@ -1902,9 +1970,10 @@ impl OllamaManager {
         let mut download_completed = false;
 
         // Read the response as text and process line by line
-        let response_text = response.text().await.map_err(|e| {
-            Y2mdError::Llm(format!("Failed to read download response: {}", e))
-        })?;
+        let response_text = response
+            .text()
+            .await
+            .map_err(|e| Y2mdError::Llm(format!("Failed to read download response: {}", e)))?;
 
         for line in response_text.lines() {
             let line = line.trim();

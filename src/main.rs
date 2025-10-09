@@ -162,8 +162,12 @@ async fn main() -> anyhow::Result<()> {
     let (use_llm, llm_provider) = match &args.llm {
         Some(Some(provider_str)) => {
             // --llm <provider> specified
-            let provider = provider_str.parse::<LlmProviderType>()
-                .map_err(|e| anyhow::anyhow!("Invalid provider: {}. Valid providers: local, openai, anthropic, custom", e))?;
+            let provider = provider_str.parse::<LlmProviderType>().map_err(|e| {
+                anyhow::anyhow!(
+                    "Invalid provider: {}. Valid providers: local, openai, anthropic, custom",
+                    e
+                )
+            })?;
             (true, Some(provider))
         }
         Some(None) => {
@@ -298,7 +302,7 @@ async fn handle_config_command(action: Option<ConfigCommands>) -> anyhow::Result
         }
         ConfigCommands::Edit => {
             let config_path = AppConfig::config_path()?;
-            
+
             // Create config if it doesn't exist
             if !config_path.exists() {
                 let config = AppConfig::default();
@@ -350,9 +354,12 @@ async fn handle_llm_command(command: LlmCommands) -> anyhow::Result<()> {
     match command {
         LlmCommands::List => {
             println!("Checking local Ollama models...");
-            
+
             if !ollama_manager.is_available().await {
-                anyhow::bail!("Ollama service is not available at: {}\nMake sure Ollama is running", config.llm.local.endpoint);
+                anyhow::bail!(
+                    "Ollama service is not available at: {}\nMake sure Ollama is running",
+                    config.llm.local.endpoint
+                );
             }
 
             match ollama_manager.get_local_models().await {
@@ -363,7 +370,11 @@ async fn handle_llm_command(command: LlmCommands) -> anyhow::Result<()> {
                     } else {
                         println!("Local models ({} total):", models.len());
                         for model in models {
-                            let marker = if model.contains(&config.llm.local.model) { " (configured)" } else { "" };
+                            let marker = if model.contains(&config.llm.local.model) {
+                                " (configured)"
+                            } else {
+                                ""
+                            };
                             println!("  - {}{}", model, marker);
                         }
                     }
@@ -375,9 +386,12 @@ async fn handle_llm_command(command: LlmCommands) -> anyhow::Result<()> {
         }
         LlmCommands::Pull { model } => {
             println!("Downloading model: {}", model);
-            
+
             if !ollama_manager.is_available().await {
-                anyhow::bail!("Ollama service is not available at: {}\nMake sure Ollama is running", config.llm.local.endpoint);
+                anyhow::bail!(
+                    "Ollama service is not available at: {}\nMake sure Ollama is running",
+                    config.llm.local.endpoint
+                );
             }
 
             // Check if model already exists
@@ -386,13 +400,17 @@ async fn handle_llm_command(command: LlmCommands) -> anyhow::Result<()> {
                 return Ok(());
             }
 
-            println!("\n⚠️  This will download '{}' from Ollama's library.", model);
+            println!(
+                "\n⚠️  This will download '{}' from Ollama's library.",
+                model
+            );
             println!("   This may take several minutes. Continue? [y/N]");
 
             let mut input = String::new();
             std::io::stdin().read_line(&mut input)?;
 
-            if !input.trim().eq_ignore_ascii_case("y") && !input.trim().eq_ignore_ascii_case("yes") {
+            if !input.trim().eq_ignore_ascii_case("y") && !input.trim().eq_ignore_ascii_case("yes")
+            {
                 println!("Download cancelled.");
                 return Ok(());
             }
@@ -414,7 +432,8 @@ async fn handle_llm_command(command: LlmCommands) -> anyhow::Result<()> {
             let mut input = String::new();
             std::io::stdin().read_line(&mut input)?;
 
-            if !input.trim().eq_ignore_ascii_case("y") && !input.trim().eq_ignore_ascii_case("yes") {
+            if !input.trim().eq_ignore_ascii_case("y") && !input.trim().eq_ignore_ascii_case("yes")
+            {
                 println!("Removal cancelled.");
                 return Ok(());
             }
@@ -438,7 +457,8 @@ async fn handle_llm_command(command: LlmCommands) -> anyhow::Result<()> {
 
             println!("Testing provider: {}", provider_type);
 
-            let test_transcript = "This is a test transcript to verify the LLM connection is working properly.";
+            let test_transcript =
+                "This is a test transcript to verify the LLM connection is working properly.";
 
             match y2md::format_with_llm(test_transcript, Some(provider_type)).await {
                 Ok(result) => {
@@ -455,8 +475,12 @@ async fn handle_llm_command(command: LlmCommands) -> anyhow::Result<()> {
             }
         }
         LlmCommands::SetKey { provider } => {
-            let provider_type = provider.parse::<LlmProviderType>()
-                .map_err(|e| anyhow::anyhow!("Invalid provider: {}. Valid providers: openai, anthropic, custom", e))?;
+            let provider_type = provider.parse::<LlmProviderType>().map_err(|e| {
+                anyhow::anyhow!(
+                    "Invalid provider: {}. Valid providers: openai, anthropic, custom",
+                    e
+                )
+            })?;
 
             if provider_type == LlmProviderType::Local {
                 anyhow::bail!("Local provider (Ollama) does not require an API key");

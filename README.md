@@ -280,7 +280,7 @@ impressive. The borrow checker is a unique feature that...
 
 ## 📝 Output Format
 
-Transcripts are saved as Markdown files with YAML front matter:
+Transcripts are saved as Markdown files with YAML front matter containing comprehensive metadata:
 
 ```markdown
 ---
@@ -289,15 +289,38 @@ channel: "Channel Name"
 url: "https://youtube.com/watch?v=..."
 video_id: "VIDEO_ID"
 duration: "12:34"
-source: "captions"
+source: "captions"              # or "whisper" for STT
 language: "en"
 extracted_at: "2024-03-20T10:30:00Z"
+formatted_by: "llm"             # or "standard" for non-LLM
+llm_provider: "anthropic"       # Provider used (if LLM formatting applied)
+llm_model: "claude-3-sonnet-20240229"  # Specific model (if LLM formatting applied)
 ---
 
 # Video Title
 
 [Well-formatted transcript content...]
 ```
+
+### Metadata Fields
+
+- **title**: Video title
+- **channel**: Channel/creator name
+- **url**: Original YouTube URL
+- **video_id**: YouTube video ID
+- **duration**: Video length (HH:MM:SS)
+- **source**: Transcript source (`captions` or `whisper`)
+- **language**: Transcript language code
+- **extracted_at**: ISO 8601 timestamp of extraction
+- **formatted_by**: Formatting method (`llm` or `standard`)
+- **llm_provider**: LLM provider used (only if `formatted_by: "llm"`)
+- **llm_model**: Specific model name (only if `formatted_by: "llm"`)
+
+This metadata allows you to:
+- Track which LLM provider and model processed each transcript
+- Reproduce results with the same configuration
+- Audit processing quality across different providers
+- Organize transcripts by processing method
 
 ## 🌍 Supported Languages
 

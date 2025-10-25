@@ -31,6 +31,57 @@ pub enum Y2mdError {
     Whisper(String),
     #[error("LLM error: {0}")]
     Llm(String),
+    #[error("yt-dlp not found\n\n{}", get_installation_help("yt-dlp"))]
+    YtDlpNotFound,
+    #[error("FFmpeg not found\n\n{}", get_installation_help("ffmpeg"))]
+    FFmpegNotFound,
+}
+
+fn get_installation_help(tool: &str) -> String {
+    let os = std::env::consts::OS;
+    
+    match (tool, os) {
+        ("yt-dlp", "linux") => {
+            "To install yt-dlp:\n\n  \
+            Ubuntu/Debian:  sudo apt install yt-dlp\n  \
+            Fedora:         sudo dnf install yt-dlp\n  \
+            Arch:           sudo pacman -S yt-dlp\n  \
+            pip:            python3 -m pip install yt-dlp\n\n\
+            After installation, run: y2md doctor".to_string()
+        }
+        ("yt-dlp", "macos") => {
+            "To install yt-dlp:\n\n  \
+            Homebrew:       brew install yt-dlp\n  \
+            MacPorts:       sudo port install yt-dlp\n  \
+            pip:            python3 -m pip install yt-dlp\n\n\
+            After installation, run: y2md doctor".to_string()
+        }
+        ("yt-dlp", _) => {
+            "To install yt-dlp:\n\n  \
+            pip:            python3 -m pip install yt-dlp\n  \
+            More info:      https://github.com/yt-dlp/yt-dlp\n\n\
+            After installation, run: y2md doctor".to_string()
+        }
+        ("ffmpeg", "linux") => {
+            "To install FFmpeg:\n\n  \
+            Ubuntu/Debian:  sudo apt install ffmpeg\n  \
+            Fedora:         sudo dnf install ffmpeg\n  \
+            Arch:           sudo pacman -S ffmpeg\n\n\
+            After installation, run: y2md doctor".to_string()
+        }
+        ("ffmpeg", "macos") => {
+            "To install FFmpeg:\n\n  \
+            Homebrew:       brew install ffmpeg\n  \
+            MacPorts:       sudo port install ffmpeg\n\n\
+            After installation, run: y2md doctor".to_string()
+        }
+        ("ffmpeg", _) => {
+            "To install FFmpeg:\n\n  \
+            More info:      https://ffmpeg.org/download.html\n\n\
+            After installation, run: y2md doctor".to_string()
+        }
+        _ => "Please install manually".to_string(),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -431,10 +482,7 @@ pub async fn fetch_video_metadata(video_id: &str) -> Result<VideoMetadata, Y2mdE
         .output()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                Y2mdError::Config(
-                    "yt-dlp not found. Please install yt-dlp: https://github.com/yt-dlp/yt-dlp"
-                        .to_string(),
-                )
+                Y2mdError::YtDlpNotFound
             } else {
                 Y2mdError::Io(e)
             }
@@ -501,10 +549,7 @@ pub async fn check_captions_available(video_id: &str) -> Result<bool, Y2mdError>
         .output()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                Y2mdError::Config(
-                    "yt-dlp not found. Please install yt-dlp: https://github.com/yt-dlp/yt-dlp"
-                        .to_string(),
-                )
+                Y2mdError::YtDlpNotFound
             } else {
                 Y2mdError::Io(e)
             }
@@ -550,10 +595,7 @@ pub async fn extract_captions(
         .output()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                Y2mdError::Config(
-                    "yt-dlp not found. Please install yt-dlp: https://github.com/yt-dlp/yt-dlp"
-                        .to_string(),
-                )
+                Y2mdError::YtDlpNotFound
             } else {
                 Y2mdError::Io(e)
             }
@@ -710,10 +752,7 @@ pub async fn download_audio(video_id: &str, output_dir: &str) -> Result<PathBuf,
         .status()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                Y2mdError::Config(
-                    "yt-dlp not found. Please install yt-dlp: https://github.com/yt-dlp/yt-dlp"
-                        .to_string(),
-                )
+                Y2mdError::YtDlpNotFound
             } else {
                 Y2mdError::Io(e)
             }
@@ -1216,7 +1255,13 @@ async fn convert_audio_to_wav(audio_path: &PathBuf) -> Result<PathBuf, Y2mdError
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map_err(|e| Y2mdError::Config(format!("Failed to execute ffmpeg: {}", e)))?;
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Y2mdError::FFmpegNotFound
+            } else {
+                Y2mdError::Io(e)
+            }
+        })?;
 
     if !status.success() {
         return Err(Y2mdError::Config("FFmpeg conversion failed".to_string()));

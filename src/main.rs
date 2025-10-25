@@ -6,6 +6,9 @@ use y2md::{
     CredentialManager, LlmProviderType, OllamaManager,
 };
 
+mod diagnostics;
+mod setup;
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -58,6 +61,16 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Check system dependencies and configuration
+    Doctor,
+    
+    /// Run interactive setup wizard
+    Init {
+        /// Force re-initialization even if config exists
+        #[arg(long)]
+        force: bool,
+    },
+    
     /// Configuration management
     Config {
         #[command(subcommand)]
@@ -115,6 +128,25 @@ async fn main() -> anyhow::Result<()> {
     // Handle subcommands
     if let Some(command) = args.command {
         match command {
+            Commands::Doctor => {
+                let report = diagnostics::run_diagnostics().await;
+                diagnostics::print_diagnostic_report(&report);
+                std::process::exit(if report.has_errors() { 1 } else { 0 });
+            }
+            Commands::Init { force } => {
+                if !force {
+                    if let Ok(config_path) = AppConfig::config_path() {
+                        if config_path.exists() {
+                            println!("Configuration already exists at: {}", config_path.display());
+                            println!("Use --force to overwrite, or edit with: y2md config edit");
+                            return Ok(());
+                        }
+                    }
+                }
+                
+                setup::SetupWizard::run().await?;
+                return Ok(());
+            }
             Commands::Config { action } => {
                 return handle_config_command(action).await;
             }

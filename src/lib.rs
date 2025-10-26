@@ -39,47 +39,41 @@ pub enum Y2mdError {
 
 fn get_installation_help(tool: &str) -> String {
     let os = std::env::consts::OS;
-    
+
     match (tool, os) {
-        ("yt-dlp", "linux") => {
-            "To install yt-dlp:\n\n  \
+        ("yt-dlp", "linux") => "To install yt-dlp:\n\n  \
             Ubuntu/Debian:  sudo apt install yt-dlp\n  \
             Fedora:         sudo dnf install yt-dlp\n  \
             Arch:           sudo pacman -S yt-dlp\n  \
             pip:            python3 -m pip install yt-dlp\n\n\
-            After installation, run: y2md doctor".to_string()
-        }
-        ("yt-dlp", "macos") => {
-            "To install yt-dlp:\n\n  \
+            After installation, run: y2md doctor"
+            .to_string(),
+        ("yt-dlp", "macos") => "To install yt-dlp:\n\n  \
             Homebrew:       brew install yt-dlp\n  \
             MacPorts:       sudo port install yt-dlp\n  \
             pip:            python3 -m pip install yt-dlp\n\n\
-            After installation, run: y2md doctor".to_string()
-        }
-        ("yt-dlp", _) => {
-            "To install yt-dlp:\n\n  \
+            After installation, run: y2md doctor"
+            .to_string(),
+        ("yt-dlp", _) => "To install yt-dlp:\n\n  \
             pip:            python3 -m pip install yt-dlp\n  \
             More info:      https://github.com/yt-dlp/yt-dlp\n\n\
-            After installation, run: y2md doctor".to_string()
-        }
-        ("ffmpeg", "linux") => {
-            "To install FFmpeg:\n\n  \
+            After installation, run: y2md doctor"
+            .to_string(),
+        ("ffmpeg", "linux") => "To install FFmpeg:\n\n  \
             Ubuntu/Debian:  sudo apt install ffmpeg\n  \
             Fedora:         sudo dnf install ffmpeg\n  \
             Arch:           sudo pacman -S ffmpeg\n\n\
-            After installation, run: y2md doctor".to_string()
-        }
-        ("ffmpeg", "macos") => {
-            "To install FFmpeg:\n\n  \
+            After installation, run: y2md doctor"
+            .to_string(),
+        ("ffmpeg", "macos") => "To install FFmpeg:\n\n  \
             Homebrew:       brew install ffmpeg\n  \
             MacPorts:       sudo port install ffmpeg\n\n\
-            After installation, run: y2md doctor".to_string()
-        }
-        ("ffmpeg", _) => {
-            "To install FFmpeg:\n\n  \
+            After installation, run: y2md doctor"
+            .to_string(),
+        ("ffmpeg", _) => "To install FFmpeg:\n\n  \
             More info:      https://ffmpeg.org/download.html\n\n\
-            After installation, run: y2md doctor".to_string()
-        }
+            After installation, run: y2md doctor"
+            .to_string(),
         _ => "Please install manually".to_string(),
     }
 }
@@ -345,7 +339,14 @@ impl CredentialManager {
         let provider_name = provider_type.to_string();
         let env_var_name = format!("Y2MD_{}_API_KEY", provider_name.to_uppercase());
 
+        // First, check Y2MD_<PROVIDER>_API_KEY
         if let Ok(key) = std::env::var(&env_var_name) {
+            return Ok(Some(key));
+        }
+
+        // Then check <PROVIDER>_API_KEY as fallback (for common provider names)
+        let fallback_env_var = format!("{}_API_KEY", provider_name.to_uppercase());
+        if let Ok(key) = std::env::var(&fallback_env_var) {
             return Ok(Some(key));
         }
 
@@ -368,7 +369,7 @@ impl CredentialManager {
         api_key: &str,
     ) -> Result<(), Y2mdError> {
         let provider_name = provider_type.to_string();
-        
+
         // Try keyring first
         match keyring::Entry::new(&self.service_name, &provider_name) {
             Ok(entry) => {

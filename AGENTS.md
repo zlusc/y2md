@@ -86,7 +86,13 @@
    - Requires API key (set via `y2md llm set-key anthropic` or `ANTHROPIC_API_KEY`)
    - Configure endpoint and model in `[llm.anthropic]`
    
-4. **Custom** (OpenAI-compatible)
+4. **DeepSeek**
+   - Supports deepseek-chat, deepseek-coder models
+   - Requires API key (set via `y2md llm set-key deepseek` or `DEEPSEEK_API_KEY`)
+   - Configure endpoint and model in `[llm.deepseek]`
+   - Fast and cost-effective alternative to OpenAI/Anthropic
+   
+5. **Custom** (OpenAI-compatible)
    - For any OpenAI-compatible API (Groq, Together AI, LM Studio, etc.)
    - Optional API key support
    - Configure endpoint and model in `[llm.custom]`

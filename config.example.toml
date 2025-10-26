@@ -25,7 +25,7 @@ paragraph_length = 4                # Sentences per paragraph
 # -----------------------------------------------------------------------------
 [llm]
 enabled = false                     # Use LLM formatting by default
-provider = "local"                  # Default provider: local, openai, anthropic, custom
+provider = "local"                  # Default provider: local, openai, anthropic, deepseek, custom
 
 # Local LLM (Ollama)
 # No API key needed - just make sure Ollama is running

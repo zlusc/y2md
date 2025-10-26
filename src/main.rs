@@ -63,14 +63,14 @@ struct Args {
 enum Commands {
     /// Check system dependencies and configuration
     Doctor,
-    
+
     /// Run interactive setup wizard
     Init {
         /// Force re-initialization even if config exists
         #[arg(long)]
         force: bool,
     },
-    
+
     /// Configuration management
     Config {
         #[command(subcommand)]
@@ -143,7 +143,7 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                 }
-                
+
                 setup::SetupWizard::run().await?;
                 return Ok(());
             }

@@ -9,4 +9,6 @@ target/
 .env
 .env.local
 
-
+# for coding tools
+opencodetmp/
+.claude/
